@@ -1,0 +1,25 @@
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Node.js / Backend build & runtime data
+backend/node_modules/
+backend/dist/
+backend/.data/
+backend/.vercel/
+npm-debug.log*
+
+# Flutter / Mobile build & cache
+mobile/build/
+mobile/.dart_tool/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/android/.gradle/
+mobile/android/local.properties
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+*.iml
