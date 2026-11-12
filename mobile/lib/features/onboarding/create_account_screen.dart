@@ -13,6 +13,8 @@ class CreateAccountScreen extends StatefulWidget {
   final Future<String?> Function(String name, String email, String password) onCreate;
   final Future<String?> Function(String email, String password)? onSignIn;
   final Future<String?> Function(String email)? onForgotPassword;
+  final Future<String?> Function(String email, String code, String newPassword)?
+      onResetPassword;
   final Future<String?> Function()? onGoogleSignIn;
 
   const CreateAccountScreen({
@@ -24,6 +26,7 @@ class CreateAccountScreen extends StatefulWidget {
     required this.onCreate,
     this.onSignIn,
     this.onForgotPassword,
+    this.onResetPassword,
     this.onGoogleSignIn,
   });
 
@@ -161,57 +164,172 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
 
   void _showForgotPasswordSheet() {
     final resetCtrl = TextEditingController(text: _emailCtrl.text.trim());
+    final codeCtrl = TextEditingController();
+    final newPassCtrl = TextEditingController();
+    var enterCodeStep = false;
+    var busy = false;
+    String? statusMsg;
+
     showPremiumSheet(
       context: context,
-      builder: (ctx) => Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const TileIconBox(
-                icon: AppIconType.lock,
-                tone: TileTone.indigo,
-                size: 42,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const TileIconBox(
+                  icon: AppIconType.lock,
+                  tone: TileTone.indigo,
+                  size: 42,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    enterCodeStep ? 'Enter verification code' : 'Reset password',
+                    style: AppTheme.inter(size: 19, weight: FontWeight.w800),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              enterCodeStep
+                  ? 'Enter the 6-digit code sent to ${resetCtrl.text.trim()} and choose your new password.'
+                  : 'Enter the email linked to your account to receive a 6-digit verification code.',
+              style: AppTheme.inter(size: 13, color: AppColors.mutedText, height: 1.5),
+            ),
+            if (statusMsg != null) ...[
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(11),
+                decoration: BoxDecoration(
+                  color: AppColors.indigo.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 child: Text(
-                  'Reset password',
-                  style: AppTheme.inter(size: 19, weight: FontWeight.w800),
+                  statusMsg!,
+                  style: AppTheme.inter(size: 12, color: AppColors.navy, height: 1.4),
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 10),
-          Text(
-            'Enter the email linked to your account and we will send a sign-in recovery link.',
-            style: AppTheme.inter(size: 13, color: AppColors.mutedText, height: 1.5),
-          ),
-          const SizedBox(height: 14),
-          PremiumSheetField(
-            controller: resetCtrl,
-            label: 'Email address',
-            hint: 'name@example.com',
-            keyboardType: TextInputType.emailAddress,
-            autofocus: true,
-          ),
-          const SizedBox(height: 16),
-          PrimaryButton(
-            label: 'Send recovery link',
-            onTap: () async {
-              final target = resetCtrl.text.trim();
-              if (!target.contains('@')) return;
-              Navigator.pop(ctx);
-              final msg = widget.onForgotPassword != null
-                  ? await widget.onForgotPassword!(target)
-                  : null;
-              if (mounted) {
-                showAppToast(context, msg ?? 'Recovery link sent to $target');
-              }
-            },
-          ),
-        ],
+            const SizedBox(height: 14),
+            if (!enterCodeStep) ...[
+              PremiumSheetField(
+                controller: resetCtrl,
+                label: 'Email address',
+                hint: 'name@example.com',
+                keyboardType: TextInputType.emailAddress,
+                autofocus: true,
+              ),
+              const SizedBox(height: 16),
+              PrimaryButton(
+                label: busy ? 'Sending code...' : 'Send 6-digit reset code',
+                onTap: busy
+                    ? null
+                    : () async {
+                        final target = resetCtrl.text.trim();
+                        if (!target.contains('@')) return;
+                        setSheetState(() {
+                          busy = true;
+                          statusMsg = null;
+                        });
+                        final msg = widget.onForgotPassword != null
+                            ? await widget.onForgotPassword!(target)
+                            : 'Reset code queued for $target';
+                        if (!ctx.mounted) return;
+                        setSheetState(() {
+                          busy = false;
+                          statusMsg = msg;
+                          enterCodeStep = true;
+                        });
+                      },
+              ),
+              const SizedBox(height: 10),
+              Center(
+                child: GestureDetector(
+                  onTap: () => setSheetState(() => enterCodeStep = true),
+                  child: Text(
+                    'Already have a 6-digit code?',
+                    style: AppTheme.inter(
+                      size: 12.5,
+                      weight: FontWeight.w600,
+                      color: AppColors.indigo,
+                    ),
+                  ),
+                ),
+              ),
+            ] else ...[
+              PremiumSheetField(
+                controller: codeCtrl,
+                label: '6-digit verification code',
+                hint: '123456',
+                keyboardType: TextInputType.number,
+                autofocus: true,
+              ),
+              const SizedBox(height: 12),
+              PremiumSheetField(
+                controller: newPassCtrl,
+                label: 'New password (min 6 characters)',
+                hint: 'Enter new password',
+              ),
+              const SizedBox(height: 16),
+              PrimaryButton(
+                label: busy ? 'Updating password...' : 'Verify code & reset password',
+                onTap: busy
+                    ? null
+                    : () async {
+                        final email = resetCtrl.text.trim();
+                        final code = codeCtrl.text.trim();
+                        final newPassword = newPassCtrl.text;
+                        if (code.length != 6 || newPassword.length < 6) {
+                          setSheetState(() {
+                            statusMsg = 'Enter the 6-digit code and a password of at least 6 characters.';
+                          });
+                          return;
+                        }
+                        if (widget.onResetPassword == null) {
+                          Navigator.pop(ctx);
+                          return;
+                        }
+                        setSheetState(() {
+                          busy = true;
+                          statusMsg = null;
+                        });
+                        final err = await widget.onResetPassword!(email, code, newPassword);
+                        if (!ctx.mounted) return;
+                        if (err != null) {
+                          setSheetState(() {
+                            busy = false;
+                            statusMsg = err;
+                          });
+                          return;
+                        }
+                        Navigator.pop(ctx);
+                        if (mounted) {
+                          showAppToast(context, 'Password updated and signed in!');
+                        }
+                      },
+              ),
+              const SizedBox(height: 10),
+              Center(
+                child: GestureDetector(
+                  onTap: () => setSheetState(() => enterCodeStep = false),
+                  child: Text(
+                    'Change email or resend code',
+                    style: AppTheme.inter(
+                      size: 12.5,
+                      weight: FontWeight.w600,
+                      color: AppColors.mutedText,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

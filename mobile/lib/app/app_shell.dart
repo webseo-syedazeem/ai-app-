@@ -323,6 +323,17 @@ class _AppShellState extends State<AppShell> {
         return err;
       },
       onForgotPassword: (email) => widget.appState.requestPasswordReset(email),
+      onResetPassword: (email, code, newPassword) async {
+        final err = await widget.appState.resetPasswordWithCode(
+          email: email,
+          code: code,
+          newPassword: newPassword,
+        );
+        if (err == null) {
+          _switchTab(0);
+        }
+        return err;
+      },
       onGoogleSignIn: () => widget.appState.startGoogleOAuth(),
     );
   }

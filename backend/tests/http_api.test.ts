@@ -258,6 +258,68 @@ describe('HTTP REST API', () => {
         redirect: 'manual',
       });
       expect([200, 302, 503]).toContain(googleStart.status);
+
+      // Forgot password & Reset password flow
+      const forgotRes = await fetch(`${base}/api/auth/forgot-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: testEmail }),
+      });
+      expect(forgotRes.status).toBe(200);
+      const forgotJson = (await forgotRes.json()) as { ok: boolean; emailConfigured: boolean };
+      expect(forgotJson.ok).toBe(true);
+      expect(typeof forgotJson.emailConfigured).toBe('boolean');
+
+      const badReset = await fetch(`${base}/api/auth/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: testEmail,
+          code: '000000',
+          new_password: 'NewPassword456!',
+        }),
+      });
+      expect(badReset.status).toBe(400);
+
+      const generatedCode = await dataStore.createPasswordResetCode(testEmail, createdUserId);
+      const goodReset = await fetch(`${base}/api/auth/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: testEmail,
+          code: generatedCode,
+          new_password: 'NewPassword456!',
+        }),
+      });
+      expect(goodReset.status).toBe(200);
+      const goodResetJson = (await goodReset.json()) as { ok: boolean; token: string };
+      expect(goodResetJson.ok).toBe(true);
+      expect(goodResetJson.token).toBeTruthy();
+
+      const reloginRes = await fetch(`${base}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: testEmail, password: 'NewPassword456!' }),
+      });
+      expect(reloginRes.status).toBe(200);
+
+      // Email reports test dispatch & cron check
+      const sendDigestRes = await fetch(`${base}/api/phase2/email-reports/send-test`, {
+        method: 'POST',
+        headers: authHeaders,
+      });
+      expect(sendDigestRes.status).toBe(200);
+      const sendDigestJson = (await sendDigestRes.json()) as {
+        ok: boolean;
+        recipient: string;
+        stats: { tasksCompleted: number; totalGoals: number };
+      };
+      expect(sendDigestJson.ok).toBe(true);
+      expect(sendDigestJson.recipient).toBe(testEmail.toLowerCase());
+      expect(typeof sendDigestJson.stats.tasksCompleted).toBe('number');
+
+      const cronRes = await fetch(`${base}/api/cron/email-reports`);
+      expect([200, 401]).toContain(cronRes.status);
     } finally {
       if (createdUserId) {
         await dataStore.deleteAllUserData(createdUserId);

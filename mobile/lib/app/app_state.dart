@@ -786,7 +786,7 @@ class AppState extends ChangeNotifier {
       backendConnected = await _api.checkHealth();
     }
     if (!backendConnected) {
-      return 'Recovery link queued locally for ${email.trim()}';
+      return 'Recovery code queued locally for ${email.trim()}';
     }
     final res = await _api.postResult('/auth/forgot-password', {
       'email': email.trim(),
@@ -794,7 +794,44 @@ class AppState extends ChangeNotifier {
     if (!res.ok) {
       return res.error ?? 'Could not process recovery request.';
     }
-    return res.data?['message']?.toString() ?? 'Recovery link sent to ${email.trim()}';
+    return res.data?['message']?.toString() ?? 'Recovery code sent to ${email.trim()}';
+  }
+
+  /// Completes password reset using the 6-digit email verification code and signs the user in.
+  Future<String?> resetPasswordWithCode({
+    required String email,
+    required String code,
+    required String newPassword,
+  }) async {
+    if (!backendConnected) {
+      backendConnected = await _api.checkHealth();
+    }
+    if (!backendConnected) {
+      return 'Server unreachable. Check your internet connection.';
+    }
+    final res = await _api.postResult('/auth/reset-password', {
+      'email': email.trim(),
+      'code': code.trim(),
+      'new_password': newPassword,
+    });
+    if (!res.ok) {
+      return res.error ?? 'Invalid or expired 6-digit reset code.';
+    }
+    final data = res.data;
+    if (data != null && data['token'] is String) {
+      _api.authToken = data['token'] as String;
+      if (data['user'] is Map) {
+        user = UserProfileModel.fromJson(
+          Map<String, dynamic>.from(data['user'] as Map),
+        ).copyWith(onboardingCompleted: true);
+        _api.userId = user.id;
+      }
+      _clearLocalWorkspace();
+      await _syncWorkspaceFromBackend(replaceWhenEmpty: true);
+      await _persist();
+      notifyListeners();
+    }
+    return null;
   }
 
   /// Launches the Google OAuth 2.0 flow in the external browser and expects a redirect back via deep link.
@@ -1768,6 +1805,31 @@ class AppState extends ChangeNotifier {
       'weekly_summary_enabled': weeklyEmailSummary,
       'monthly_review_enabled': monthlyEmailReview,
     });
+  }
+
+  /// Sends an immediate live digest email to the account email via the backend.
+  Future<Map<String, dynamic>> sendTestEmailReport() async {
+    if (!backendConnected) {
+      backendConnected = await _api.checkHealth();
+    }
+    if (!backendConnected) {
+      return {
+        'ok': false,
+        'sent': false,
+        'configured': false,
+        'reason': 'Backend server is offline. Check your connection.',
+      };
+    }
+    final res = await _api.postResult('/phase2/email-reports/send-test', {});
+    if (!res.ok || res.data == null) {
+      return {
+        'ok': false,
+        'sent': false,
+        'configured': false,
+        'reason': res.error ?? 'Could not send email report.',
+      };
+    }
+    return Map<String, dynamic>.from(res.data!);
   }
 
   String exportAllDataJson() {

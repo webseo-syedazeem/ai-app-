@@ -199,3 +199,12 @@ export interface EmailReportPrefs {
   monthly_review_enabled: boolean;
   updated_at: string;
 }
+
+export interface PasswordResetToken {
+  id: string;
+  user_id: string;
+  email: string;
+  code_hash: string;
+  expires_at: string;
+  created_at: string;
+}

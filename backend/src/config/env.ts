@@ -26,10 +26,17 @@ export const env = {
     cleanEnv(process.env.JWT_SECRET) || 'ai-daily-helper-dev-secret-change-in-prod',
   googleClientId: cleanEnv(process.env.GOOGLE_CLIENT_ID),
   googleClientSecret: cleanEnv(process.env.GOOGLE_CLIENT_SECRET),
+  resendApiKey: cleanEnv(process.env.RESEND_API_KEY),
+  emailFrom: cleanEnv(process.env.EMAIL_FROM) || 'AI Daily Helper <onboarding@resend.dev>',
+  cronSecret: cleanEnv(process.env.CRON_SECRET),
 };
 
 export function hasGoogleOAuthConfig(): boolean {
   return Boolean(env.googleClientId && env.googleClientSecret);
+}
+
+export function hasEmailConfig(): boolean {
+  return Boolean(env.resendApiKey);
 }
 
 export function hasMongoConfig(): boolean {

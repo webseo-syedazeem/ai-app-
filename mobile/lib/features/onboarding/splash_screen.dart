@@ -58,10 +58,33 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                       opacity: _logoFade,
                       child: ScaleTransition(
                         scale: _logoScale,
-                        child: const AmbientPulseHalo(
-                          color: Color(0x337186FF),
+                        child: AmbientPulseHalo(
+                          color: const Color(0x337186FF),
                           maxScale: 1.55,
-                          child: AppBrandMark(size: 116),
+                          child: Container(
+                            width: 116,
+                            height: 116,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(32),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: AppColors.indigo.withValues(alpha: 0.22),
+                                  blurRadius: 28,
+                                  offset: const Offset(0, 12),
+                                ),
+                              ],
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(32),
+                              child: Image.asset(
+                                'assets/branding/app_logo.png',
+                                width: 116,
+                                height: 116,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, _, _) => const AppBrandMark(size: 116),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ),

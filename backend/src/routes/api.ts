@@ -14,7 +14,12 @@ import {
   verifyPassword,
 } from '../services/authService.js';
 import { checkAndConsumeQuota, PLAN_CONFIG } from '../services/usageService.js';
-import { env, hasGeminiConfig, hasGoogleOAuthConfig } from '../config/env.js';
+import { env, hasEmailConfig, hasGeminiConfig, hasGoogleOAuthConfig } from '../config/env.js';
+import {
+  sendDigestReportEmail,
+  sendPasswordResetEmail,
+  type DigestReportStats,
+} from '../services/emailService.js';
 
 export const apiRouter = Router();
 
@@ -101,6 +106,7 @@ apiRouter.get('/health', (_req: Request, res: Response) => {
     hosting: process.env.VERCEL === '1' ? 'vercel-serverless' : 'node-express',
     database: dataStore.isUsingMongo() ? 'mongodb' : 'local-dev-store',
     geminiConfigured: hasGeminiConfig(),
+    emailConfigured: hasEmailConfig(),
     timestamp: new Date().toISOString(),
   });
 });
@@ -177,10 +183,62 @@ apiRouter.post('/auth/forgot-password', async (req: Request, res: Response) => {
     return;
   }
 
-  await dataStore.findUserByEmail(parsed.data.email.toLowerCase());
+  const normalizedEmail = parsed.data.email.toLowerCase();
+  const user = await dataStore.findUserByEmail(normalizedEmail);
+  let sent = false;
+  if (user) {
+    const code = await dataStore.createPasswordResetCode(normalizedEmail, user.id);
+    const result = await sendPasswordResetEmail({
+      to: normalizedEmail,
+      fullName: user.full_name,
+      code,
+    });
+    sent = result.sent;
+  }
+
+  const message = sent
+    ? `We sent a 6-digit password reset code to ${normalizedEmail}.`
+    : hasEmailConfig()
+      ? `If an account exists for ${normalizedEmail}, a 6-digit reset code has been queued.`
+      : `Reset code generated for ${normalizedEmail}, but live email delivery needs RESEND_API_KEY configured on the server.`;
+
   res.json({
     ok: true,
-    message: `If an account exists for ${parsed.data.email.toLowerCase()}, recovery instructions have been queued.`,
+    sent,
+    emailConfigured: hasEmailConfig(),
+    message,
+  });
+});
+
+apiRouter.post('/auth/reset-password', async (req: Request, res: Response) => {
+  const schema = z.object({
+    email: z.string().trim().email('Valid email address is required'),
+    code: z.string().trim().regex(/^\d{6}$/, 'Enter the 6-digit verification code'),
+    new_password: z.string().min(6, 'New password must be at least 6 characters'),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid reset request' });
+    return;
+  }
+
+  const user = await dataStore.verifyAndConsumeResetCode(parsed.data.email, parsed.data.code);
+  if (!user) {
+    res.status(400).json({ error: 'Invalid or expired 6-digit reset code.' });
+    return;
+  }
+
+  const updated = await dataStore.updateUser(user.id, {
+    password_hash: hashPassword(parsed.data.new_password),
+  });
+  const token = signAuthToken(updated);
+
+  res.json({
+    ok: true,
+    token,
+    user: sanitizeUser(updated),
+    planLimits: PLAN_CONFIG[updated.plan],
+    allPlans: PLAN_CONFIG,
   });
 });
 
@@ -1189,13 +1247,108 @@ apiRouter.get('/phase2/productivity', async (req: Request, res: Response) => {
   });
 });
 
+async function buildDigestStats(userId: string, periodLabel: string): Promise<DigestReportStats> {
+  const [tasks, goals, reminders, memories, budgetOverview] = await Promise.all([
+    dataStore.listTasks(userId),
+    dataStore.listGoals(userId),
+    dataStore.listReminders(userId),
+    dataStore.listMemories(userId),
+    dataStore.getBudgetOverview(userId),
+  ]);
+  const monthlySpent = budgetOverview.expenses.reduce(
+    (sum, item) => sum + (Number(item.amount) || 0),
+    0
+  );
+  return {
+    periodLabel,
+    tasksCompleted: tasks.filter((t) => t.status === 'completed').length,
+    tasksPending: tasks.filter((t) => t.status === 'pending').length,
+    goalsCompleted: goals.filter((g) => g.completed).length,
+    totalGoals: goals.length,
+    upcomingReminders: reminders.filter((r) => r.status === 'upcoming').length,
+    monthlySpent,
+    monthlyLimit: budgetOverview.budget.monthly_limit,
+    currency: budgetOverview.budget.currency,
+    memoryCount: memories.length,
+  };
+}
+
 apiRouter.get('/phase2/email-reports', async (req: Request, res: Response) => {
-  res.json({ prefs: await dataStore.getEmailReportPrefs(getUserId(req)) });
+  res.json({
+    prefs: await dataStore.getEmailReportPrefs(getUserId(req)),
+    emailConfigured: hasEmailConfig(),
+  });
 });
 
 apiRouter.patch('/phase2/email-reports', async (req: Request, res: Response) => {
   const prefs = await dataStore.updateEmailReportPrefs(getUserId(req), req.body || {});
-  res.json({ prefs });
+  res.json({ prefs, emailConfigured: hasEmailConfig() });
+});
+
+apiRouter.post('/phase2/email-reports/send-test', async (req: Request, res: Response) => {
+  const userId = getUserId(req);
+  const user = await dataStore.ensureUser(userId);
+  const stats = await buildDigestStats(userId, 'Weekly Summary');
+  const result = await sendDigestReportEmail({
+    to: user.email,
+    fullName: user.full_name,
+    stats,
+  });
+
+  res.json({
+    ok: true,
+    sent: result.sent,
+    configured: result.configured,
+    recipient: user.email,
+    reason: result.reason || null,
+    stats,
+  });
+});
+
+apiRouter.get('/cron/email-reports', async (req: Request, res: Response) => {
+  if (env.cronSecret) {
+    const auth = req.header('authorization')?.trim();
+    const querySecret = typeof req.query.secret === 'string' ? req.query.secret : '';
+    if (auth !== `Bearer ${env.cronSecret}` && querySecret !== env.cronSecret) {
+      res.status(401).json({ error: 'Unauthorized cron request' });
+      return;
+    }
+  }
+
+  const now = new Date();
+  const isMonday = now.getUTCDay() === 1;
+  const isFirstOfMonth = now.getUTCDate() === 1;
+  const force = req.query.force === 'true';
+
+  const subscribers = await dataStore.listEnabledEmailReportUsers();
+  let sentCount = 0;
+  let skippedCount = 0;
+
+  for (const { user, prefs } of subscribers) {
+    const shouldSendWeekly = prefs.weekly_summary_enabled && (isMonday || force);
+    const shouldSendMonthly = prefs.monthly_review_enabled && (isFirstOfMonth || force);
+    if (!shouldSendWeekly && !shouldSendMonthly) {
+      skippedCount += 1;
+      continue;
+    }
+    const label = shouldSendMonthly && !shouldSendWeekly ? 'Monthly Review' : 'Weekly Summary';
+    const stats = await buildDigestStats(user.id, label);
+    const result = await sendDigestReportEmail({
+      to: user.email,
+      fullName: user.full_name,
+      stats,
+    });
+    if (result.sent) sentCount += 1;
+    else skippedCount += 1;
+  }
+
+  res.json({
+    ok: true,
+    emailConfigured: hasEmailConfig(),
+    checked: subscribers.length,
+    sent: sentCount,
+    skipped: skippedCount,
+  });
 });
 
 for (const layer of apiRouter.stack) {

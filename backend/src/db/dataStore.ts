@@ -15,6 +15,7 @@ import type {
   GoalItem,
   KeepForLaterItem,
   MemoryItem,
+  PasswordResetToken,
   ReminderItem,
   ShoppingItem,
   TaskItem,
@@ -40,6 +41,7 @@ interface LocalSnapshot {
   expenses: ExpenseItem[];
   budget_folders?: BudgetFolder[];
   email_report_preferences: Record<string, EmailReportPrefs>;
+  password_reset_tokens?: PasswordResetToken[];
 }
 
 const DATA_DIR =
@@ -491,7 +493,7 @@ function createInitialSnapshot(): LocalSnapshot {
         created_at: now,
       },
     ],
-    email_report_preferences: {
+      email_report_preferences: {
       [uid]: {
         user_id: uid,
         enabled: false,
@@ -500,6 +502,7 @@ function createInitialSnapshot(): LocalSnapshot {
         updated_at: now,
       },
     },
+    password_reset_tokens: [],
   };
 }
 
@@ -546,6 +549,9 @@ class LocalStore {
     this.snapshot.expenses = this.snapshot.expenses.filter((e) => e.user_id !== userId);
     this.snapshot.budget_folders = (this.snapshot.budget_folders ?? []).filter(
       (f) => f.user_id !== userId
+    );
+    this.snapshot.password_reset_tokens = (this.snapshot.password_reset_tokens ?? []).filter(
+      (p) => p.user_id !== userId
     );
     this.persist();
   }
@@ -1690,6 +1696,90 @@ export class DataStore {
     return updated;
   }
 
+  async listEnabledEmailReportUsers(): Promise<
+    Array<{ user: UserProfile; prefs: EmailReportPrefs }>
+  > {
+    const db = await getMongoDb();
+    if (db) {
+      const enabledPrefs = await db
+        .collection<EmailReportPrefs>('email_report_preferences')
+        .find({ enabled: true })
+        .toArray();
+      const out: Array<{ user: UserProfile; prefs: EmailReportPrefs }> = [];
+      for (const p of enabledPrefs) {
+        const user = await this.findUserById(p.user_id);
+        if (user?.email) out.push({ user, prefs: stripMongoId(p) });
+      }
+      return out;
+    }
+    const snap = this.local.read();
+    return Object.values(snap.email_report_preferences)
+      .filter((p) => p.enabled)
+      .map((prefs) => ({ user: snap.users[prefs.user_id], prefs }))
+      .filter((entry): entry is { user: UserProfile; prefs: EmailReportPrefs } => Boolean(entry.user));
+  }
+
+  // ---------------- PASSWORD RESET CODES ----------------
+  private hashResetCode(code: string): string {
+    return crypto.createHash('sha256').update(code.trim()).digest('hex');
+  }
+
+  async createPasswordResetCode(email: string, userId: string): Promise<string> {
+    const normalizedEmail = email.trim().toLowerCase();
+    const code = crypto.randomInt(100000, 1000000).toString();
+    const record: PasswordResetToken = {
+      id: crypto.randomUUID(),
+      user_id: userId,
+      email: normalizedEmail,
+      code_hash: this.hashResetCode(code),
+      expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+      created_at: nowIso(),
+    };
+    const db = await getMongoDb();
+    if (db) {
+      await db.collection<PasswordResetToken>('password_reset_tokens').deleteMany({
+        email: normalizedEmail,
+      });
+      await db.collection<PasswordResetToken>('password_reset_tokens').insertOne({ ...record });
+      return code;
+    }
+    const snap = this.local.read();
+    snap.password_reset_tokens = [
+      ...(snap.password_reset_tokens ?? []).filter((t) => t.email !== normalizedEmail),
+      record,
+    ];
+    this.local.save();
+    return code;
+  }
+
+  async verifyAndConsumeResetCode(email: string, code: string): Promise<UserProfile | null> {
+    const normalizedEmail = email.trim().toLowerCase();
+    const codeHash = this.hashResetCode(code);
+    const now = nowIso();
+    const db = await getMongoDb();
+    if (db) {
+      const match = await db.collection<PasswordResetToken>('password_reset_tokens').findOne({
+        email: normalizedEmail,
+        code_hash: codeHash,
+        expires_at: { $gt: now },
+      });
+      if (!match) return null;
+      await db
+        .collection<PasswordResetToken>('password_reset_tokens')
+        .deleteMany({ email: normalizedEmail });
+      return this.findUserById(match.user_id);
+    }
+    const snap = this.local.read();
+    const tokens = snap.password_reset_tokens ?? [];
+    const match = tokens.find(
+      (t) => t.email === normalizedEmail && t.code_hash === codeHash && t.expires_at > now
+    );
+    if (!match) return null;
+    snap.password_reset_tokens = tokens.filter((t) => t.email !== normalizedEmail);
+    this.local.save();
+    return this.findUserById(match.user_id);
+  }
+
   // ---------------- PRIVACY: EXPORT & DELETE ----------------
   async exportUserData(userId: string): Promise<Record<string, unknown>> {
     const [profile, tasks, reminders, shopping, memories, keepForLater, goals, affirmations] =
@@ -1731,6 +1821,7 @@ export class DataStore {
         db.collection('brain_dump_drafts').deleteMany({ user_id: userId }),
         db.collection('expenses').deleteMany({ user_id: userId }),
         db.collection('budget_folders').deleteMany({ user_id: userId }),
+        db.collection('password_reset_tokens').deleteMany({ user_id: userId }),
       ]);
       return;
     }

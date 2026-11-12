@@ -181,13 +181,17 @@ class EmailReportsScreen extends StatelessWidget {
                               mainAxisAlignment: MainAxisAlignment.spaceAround,
                               children: [
                                 _ReportStat(
-                                  value: (12 + appState.tasks.where((t) => t.completed).length)
+                                  value: appState.tasks
+                                      .where((t) => t.completed)
+                                      .length
                                       .toString()
                                       .padLeft(2, '0'),
                                   label: 'Tasks done',
                                 ),
                                 _ReportStat(
-                                  value: (appState.goals.where((g) => g.isCompleted).length + 2)
+                                  value: appState.goals
+                                      .where((g) => g.isCompleted)
+                                      .length
                                       .toString()
                                       .padLeft(2, '0'),
                                   label: 'Goals met',
@@ -255,20 +259,43 @@ class EmailReportsScreen extends StatelessWidget {
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(23, 6, 23, 24),
-              child: PrimaryButton(
-                label: appState.emailReportsEnabled
-                    ? 'Email reports enabled ✓'
-                    : 'Enable email reports',
-                onTap: () {
-                  final next = !appState.emailReportsEnabled;
-                  appState.updateEmailReportPrefs(enabled: next);
-                  showAppToast(
-                    context,
-                    next
-                        ? 'Weekly & monthly email reports enabled'
-                        : 'Email reports paused',
-                  );
-                },
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  PrimaryButton(
+                    label: appState.emailReportsEnabled
+                        ? 'Email reports enabled ✓'
+                        : 'Enable email reports',
+                    onTap: () {
+                      final next = !appState.emailReportsEnabled;
+                      appState.updateEmailReportPrefs(enabled: next);
+                      showAppToast(
+                        context,
+                        next
+                            ? 'Weekly & monthly email reports enabled'
+                            : 'Email reports paused',
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  PrimaryButton(
+                    label: 'Send digest email now',
+                    secondary: true,
+                    onTap: () async {
+                      final result = await appState.sendTestEmailReport();
+                      if (!context.mounted) return;
+                      final sent = result['sent'] == true;
+                      final recipient = result['recipient']?.toString() ?? appState.user.email;
+                      final reason = result['reason']?.toString();
+                      showAppToast(
+                        context,
+                        sent
+                            ? 'Live digest sent to $recipient'
+                            : reason ?? 'Email provider key needed on server to deliver emails.',
+                      );
+                    },
+                  ),
+                ],
               ),
             ),
           ],
@@ -278,7 +305,7 @@ class EmailReportsScreen extends StatelessWidget {
   }
 
   void _showPreviewSheet(BuildContext context) {
-    final completed = 12 + appState.tasks.where((t) => t.completed).length;
+    final completed = appState.tasks.where((t) => t.completed).length;
     final upcoming = appState.reminders.where((r) => !r.completed).length;
     showPremiumSheet(
       context: context,
@@ -289,7 +316,7 @@ class EmailReportsScreen extends StatelessWidget {
           Text('Sample weekly digest', style: AppTheme.inter(size: 18, weight: FontWeight.w800)),
           const SizedBox(height: 6),
           Text(
-            'Prepared for ${appState.user.fullName} · Sent ${appState.weeklyEmailSummary ? 'every Sunday 7:00 PM' : 'when weekly digest is enabled'}',
+            'Prepared for ${appState.user.fullName} (${appState.user.email}) · Sent ${appState.weeklyEmailSummary ? 'every Sunday 7:00 PM' : 'when weekly digest is enabled'}',
             style: AppTheme.inter(size: 12, color: AppColors.mutedText),
           ),
           const SizedBox(height: 14),
