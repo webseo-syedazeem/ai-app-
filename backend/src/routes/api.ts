@@ -34,6 +34,67 @@ function getUserId(req: Request): string {
   return header || DEFAULT_USER_ID;
 }
 
+apiRouter.get('/home', (_req: Request, res: Response) => {
+  res.type('html').send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AI Daily Helper</title>
+  <style>
+    body{font-family:system-ui,-apple-system,sans-serif;background:#FAF7F2;color:#2E2B26;margin:0;padding:32px 20px;line-height:1.6;}
+    .wrap{max-width:680px;margin:0 auto;background:#FFFFFF;border:1px solid #ECE7DF;border-radius:20px;padding:32px;}
+    h1{margin:0 0 8px;font-size:26px;}
+    p.sub{color:#6E675C;margin:0 0 20px;}
+    ul{padding-left:20px;color:#474139;}
+    a{color:#556B4B;font-weight:600;}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>AI Daily Helper</h1>
+    <p class="sub">Your personal AI daily-life assistant for tasks, reminders, voice brain dumps, memories, shopping lists, and goals.</p>
+    <ul>
+      <li>Voice capture and smart AI daily planning</li>
+      <li>Synced tasks, reminders, shopping items, goals, and personal memories</li>
+      <li>Secure account access with Email or Google Sign-In</li>
+    </ul>
+    <p><a href="/api/privacy">Privacy Policy</a></p>
+  </div>
+</body>
+</html>`);
+});
+
+apiRouter.get('/privacy', (_req: Request, res: Response) => {
+  res.type('html').send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AI Daily Helper — Privacy Policy</title>
+  <style>
+    body{font-family:system-ui,-apple-system,sans-serif;background:#FAF7F2;color:#2E2B26;margin:0;padding:32px 20px;line-height:1.65;}
+    .wrap{max-width:680px;margin:0 auto;background:#FFFFFF;border:1px solid #ECE7DF;border-radius:20px;padding:32px;}
+    h1{margin:0 0 8px;font-size:24px;}
+    h2{font-size:17px;margin-top:22px;}
+    p,li{color:#474139;}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Privacy Policy — AI Daily Helper</h1>
+    <p>Effective date: November 2026</p>
+    <h2>1. Information We Collect</h2>
+    <p>When you create an account or sign in with Google, we collect your name and email address to identify your workspace. We also store the tasks, reminders, shopping items, memories, goals, and notes you choose to save inside the app.</p>
+    <h2>2. Google Sign-In Data Usage</h2>
+    <p>AI Daily Helper requests only basic Google profile scopes (<code>openid</code>, <code>email</code>, <code>profile</code>) solely for authentication and account creation. We do not sell your personal information or share it with third-party advertisers.</p>
+    <h2>3. Storage &amp; Control</h2>
+    <p>Your workspace data is stored securely in MongoDB Atlas. You can export your data as JSON or delete all your account data at any time from the Settings &amp; Privacy screen inside the mobile app.</p>
+  </div>
+</body>
+</html>`);
+});
+
 apiRouter.get('/health', (_req: Request, res: Response) => {
   res.json({
     ok: true,
