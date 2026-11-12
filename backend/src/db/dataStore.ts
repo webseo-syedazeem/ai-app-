@@ -613,6 +613,34 @@ export class DataStore {
     return fresh;
   }
 
+  async upsertGoogleUser(params: {
+    email: string;
+    fullName: string;
+  }): Promise<UserProfile> {
+    const existing = await this.findUserByEmail(params.email);
+    if (existing) {
+      if (params.fullName.trim() && existing.full_name !== params.fullName.trim()) {
+        return this.updateUser(existing.id, { full_name: params.fullName.trim() });
+      }
+      return existing;
+    }
+    const fresh = buildUserProfile({
+      id: crypto.randomUUID(),
+      email: params.email,
+      fullName: params.fullName,
+      plan: 'free',
+    });
+    const db = await getMongoDb();
+    if (db) {
+      await db.collection<UserProfile>('users').insertOne({ ...fresh });
+      return fresh;
+    }
+    const snap = this.local.read();
+    snap.users[fresh.id] = fresh;
+    this.local.save();
+    return fresh;
+  }
+
   async ensureUser(userId: string): Promise<UserProfile> {
     const db = await getMongoDb();
     if (db) {
@@ -865,12 +893,29 @@ export class DataStore {
   }
 
   async toggleShoppingItem(userId: string, itemId: string, completed: boolean): Promise<ShoppingItem | null> {
-    const patch = { completed, completed_at: completed ? nowIso() : null };
+    return this.updateShoppingItem(userId, itemId, { completed });
+  }
+
+  async updateShoppingItem(
+    userId: string,
+    itemId: string,
+    patch: { item?: string; category?: string; completed?: boolean }
+  ): Promise<ShoppingItem | null> {
+    const setFields: Partial<ShoppingItem> = {};
+    if (typeof patch.item === 'string' && patch.item.trim()) setFields.item = patch.item.trim();
+    if (typeof patch.category === 'string' && patch.category.trim()) {
+      setFields.category = patch.category.trim();
+    }
+    if (typeof patch.completed === 'boolean') {
+      setFields.completed = patch.completed;
+      setFields.completed_at = patch.completed ? nowIso() : null;
+    }
+
     const db = await getMongoDb();
     if (db) {
       const res = await db.collection<ShoppingItem>('shopping_items').findOneAndUpdate(
         { id: itemId, user_id: userId },
-        { $set: patch },
+        { $set: setFields },
         { returnDocument: 'after' }
       );
       return res ? stripMongoId(res) : null;
@@ -878,9 +923,20 @@ export class DataStore {
     const list = this.local.read().shopping_items;
     const idx = list.findIndex((s) => s.id === itemId && s.user_id === userId);
     if (idx === -1) return null;
-    list[idx] = { ...list[idx], ...patch };
+    list[idx] = { ...list[idx], ...setFields };
     this.local.save();
     return list[idx];
+  }
+
+  async clearCompletedShopping(userId: string): Promise<void> {
+    const db = await getMongoDb();
+    if (db) {
+      await db.collection<ShoppingItem>('shopping_items').deleteMany({ user_id: userId, completed: true });
+      return;
+    }
+    const snap = this.local.read();
+    snap.shopping_items = snap.shopping_items.filter((s) => !(s.user_id === userId && s.completed));
+    this.local.save();
   }
 
   async removeShoppingItem(userId: string, idOrName: string): Promise<boolean> {
@@ -964,6 +1020,29 @@ export class DataStore {
     this.local.read().memories.unshift(row);
     this.local.save();
     return row;
+  }
+
+  async updateMemory(
+    userId: string,
+    memoryId: string,
+    patch: Partial<Pick<MemoryItem, 'title' | 'content' | 'category' | 'subtitle'>>
+  ): Promise<MemoryItem | null> {
+    const setFields = { ...patch, updated_at: nowIso() };
+    const db = await getMongoDb();
+    if (db) {
+      const res = await db.collection<MemoryItem>('memories').findOneAndUpdate(
+        { id: memoryId, user_id: userId },
+        { $set: setFields },
+        { returnDocument: 'after' }
+      );
+      return res ? stripMongoId(res) : null;
+    }
+    const list = this.local.read().memories;
+    const idx = list.findIndex((m) => m.id === memoryId && m.user_id === userId);
+    if (idx === -1) return null;
+    list[idx] = { ...list[idx], ...setFields };
+    this.local.save();
+    return list[idx];
   }
 
   async deleteMemory(userId: string, memoryIdOrTitle: string): Promise<boolean> {
@@ -1059,6 +1138,19 @@ export class DataStore {
     return memory;
   }
 
+  async deleteKeepForLater(userId: string, itemId: string): Promise<boolean> {
+    const db = await getMongoDb();
+    if (db) {
+      const res = await db.collection<KeepForLaterItem>('keep_for_later').deleteOne({ id: itemId, user_id: userId });
+      return res.deletedCount > 0;
+    }
+    const snap = this.local.read();
+    const before = snap.keep_for_later.length;
+    snap.keep_for_later = snap.keep_for_later.filter((k) => !(k.id === itemId && k.user_id === userId));
+    this.local.save();
+    return snap.keep_for_later.length < before;
+  }
+
   // ---------------- GOALS & AFFIRMATIONS ----------------
   async listGoals(userId: string): Promise<GoalItem[]> {
     const db = await getMongoDb();
@@ -1119,6 +1211,19 @@ export class DataStore {
     return target;
   }
 
+  async deleteGoal(userId: string, goalId: string): Promise<boolean> {
+    const db = await getMongoDb();
+    if (db) {
+      const res = await db.collection<GoalItem>('goals').deleteOne({ id: goalId, user_id: userId });
+      return res.deletedCount > 0;
+    }
+    const snap = this.local.read();
+    const before = snap.goals.length;
+    snap.goals = snap.goals.filter((g) => !(g.id === goalId && g.user_id === userId));
+    this.local.save();
+    return snap.goals.length < before;
+  }
+
   async listAffirmations(userId: string): Promise<AffirmationItem[]> {
     const db = await getMongoDb();
     if (db) {
@@ -1151,6 +1256,38 @@ export class DataStore {
     return row;
   }
 
+  async updateAffirmation(userId: string, id: string, quote: string): Promise<AffirmationItem | null> {
+    const formatted = quote.startsWith('“') ? quote : `“${quote}”`;
+    const db = await getMongoDb();
+    if (db) {
+      const res = await db.collection<AffirmationItem>('affirmations').findOneAndUpdate(
+        { id, user_id: userId },
+        { $set: { quote: formatted } },
+        { returnDocument: 'after' }
+      );
+      return res ? stripMongoId(res) : null;
+    }
+    const list = this.local.read().affirmations;
+    const idx = list.findIndex((a) => a.id === id && a.user_id === userId);
+    if (idx === -1) return null;
+    list[idx] = { ...list[idx], quote: formatted };
+    this.local.save();
+    return list[idx];
+  }
+
+  async deleteAffirmation(userId: string, id: string): Promise<boolean> {
+    const db = await getMongoDb();
+    if (db) {
+      const res = await db.collection<AffirmationItem>('affirmations').deleteOne({ id, user_id: userId });
+      return res.deletedCount > 0;
+    }
+    const snap = this.local.read();
+    const before = snap.affirmations.length;
+    snap.affirmations = snap.affirmations.filter((a) => !(a.id === id && a.user_id === userId));
+    this.local.save();
+    return snap.affirmations.length < before;
+  }
+
   // ---------------- MESSAGES & BRAIN DUMPS ----------------
   async listMessages(userId: string): Promise<ChatMessage[]> {
     const db = await getMongoDb();
@@ -1179,6 +1316,17 @@ export class DataStore {
     this.local.read().messages.push(row);
     this.local.save();
     return row;
+  }
+
+  async clearMessages(userId: string): Promise<void> {
+    const db = await getMongoDb();
+    if (db) {
+      await db.collection<ChatMessage>('conversation_messages').deleteMany({ user_id: userId });
+      return;
+    }
+    const snap = this.local.read();
+    snap.messages = snap.messages.filter((m) => m.user_id !== userId);
+    this.local.save();
   }
 
   async saveBrainDumpDraft(draft: BrainDumpDraft): Promise<BrainDumpDraft> {
@@ -1322,6 +1470,37 @@ export class DataStore {
     this.local.read().expenses.unshift(row);
     this.local.save();
     return row;
+  }
+
+  async updateBudgetLimit(userId: string, monthlyLimit: number): Promise<BudgetInfo> {
+    const { budget } = await this.getBudgetOverview(userId);
+    const clamped = Math.max(1000, Math.min(10000000, Math.round(monthlyLimit)));
+    const db = await getMongoDb();
+    if (db) {
+      const res = await db.collection<BudgetInfo>('budgets').findOneAndUpdate(
+        { id: budget.id, user_id: userId },
+        { $set: { monthly_limit: clamped } },
+        { returnDocument: 'after' }
+      );
+      return res ? stripMongoId(res) : { ...budget, monthly_limit: clamped };
+    }
+    const target = this.local.read().budgets.find((b) => b.id === budget.id);
+    if (target) target.monthly_limit = clamped;
+    this.local.save();
+    return { ...budget, monthly_limit: clamped };
+  }
+
+  async deleteExpense(userId: string, expenseId: string): Promise<boolean> {
+    const db = await getMongoDb();
+    if (db) {
+      const res = await db.collection<ExpenseItem>('expenses').deleteOne({ id: expenseId, user_id: userId });
+      return res.deletedCount > 0;
+    }
+    const snap = this.local.read();
+    const before = snap.expenses.length;
+    snap.expenses = snap.expenses.filter((e) => !(e.id === expenseId && e.user_id === userId));
+    this.local.save();
+    return snap.expenses.length < before;
   }
 
   async getEmailReportPrefs(userId: string): Promise<EmailReportPrefs> {

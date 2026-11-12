@@ -24,7 +24,13 @@ export const env = {
   useLocalDevStore: cleanEnv(process.env.USE_LOCAL_DEV_STORE) === 'true',
   jwtSecret:
     cleanEnv(process.env.JWT_SECRET) || 'ai-daily-helper-dev-secret-change-in-prod',
+  googleClientId: cleanEnv(process.env.GOOGLE_CLIENT_ID),
+  googleClientSecret: cleanEnv(process.env.GOOGLE_CLIENT_SECRET),
 };
+
+export function hasGoogleOAuthConfig(): boolean {
+  return Boolean(env.googleClientId && env.googleClientSecret);
+}
 
 export function hasMongoConfig(): boolean {
   return !env.useLocalDevStore && Boolean(env.mongoUri);

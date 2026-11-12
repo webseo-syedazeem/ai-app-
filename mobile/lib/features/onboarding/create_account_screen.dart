@@ -13,6 +13,7 @@ class CreateAccountScreen extends StatefulWidget {
   final Future<String?> Function(String name, String email, String password) onCreate;
   final Future<String?> Function(String email, String password)? onSignIn;
   final Future<String?> Function(String email)? onForgotPassword;
+  final Future<String?> Function()? onGoogleSignIn;
 
   const CreateAccountScreen({
     super.key,
@@ -23,6 +24,7 @@ class CreateAccountScreen extends StatefulWidget {
     required this.onCreate,
     this.onSignIn,
     this.onForgotPassword,
+    this.onGoogleSignIn,
   });
 
   @override
@@ -134,22 +136,27 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
 
   Future<void> _socialContinue(String provider) async {
     if (_submitting) return;
+    if (provider != 'Google') {
+      _triggerError('Sign in with Apple is only available on Apple devices. Please use Google or Email.');
+      return;
+    }
+    if (widget.onGoogleSignIn == null) {
+      _triggerError('Google Sign-In handler is not configured.');
+      return;
+    }
+
     setState(() {
       _errorMessage = null;
       _submitting = true;
     });
-
-    final email = _emailCtrl.text.trim().isNotEmpty
-        ? _emailCtrl.text.trim()
-        : 'azeem@example.com';
-    final name = _nameCtrl.text.trim().isNotEmpty ? _nameCtrl.text.trim() : 'Azeem';
-    showAppToast(context, 'Connected with $provider');
-    if (_isSignIn && widget.onSignIn != null) {
-      await widget.onSignIn!(email, '');
+    final err = await widget.onGoogleSignIn!();
+    if (!mounted) return;
+    setState(() => _submitting = false);
+    if (err != null && err.isNotEmpty) {
+      _triggerError(err);
     } else {
-      await widget.onCreate(name, email, '');
+      showAppToast(context, 'Opening Google Sign-In in your browser...');
     }
-    if (mounted) setState(() => _submitting = false);
   }
 
   void _showForgotPasswordSheet() {

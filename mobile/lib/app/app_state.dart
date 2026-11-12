@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../core/database/local_db.dart';
 import '../core/models/models.dart';
 import '../core/services/api_client.dart';
@@ -44,6 +45,9 @@ class AppState extends ChangeNotifier {
   bool emailReportsEnabled = false;
   bool weeklyEmailSummary = true;
   bool monthlyEmailReview = true;
+  int? productivityScore;
+  String? productivityStatus;
+  List<double> productivityBars = const [41.0, 66.0, 33.0, 72.0, 90.0, 49.0, 70.0];
 
   VoiceService get voice => _voice;
   String get backendUrl => _api.baseUrl;
@@ -464,38 +468,119 @@ class AppState extends ChangeNotifier {
     });
   }
 
-  Future<void> _syncWorkspaceFromBackend() async {
+  void _clearLocalWorkspace() {
+    tasks = [];
+    reminders = [];
+    shoppingItems = [];
+    memories = [];
+    keepForLaterItems = [];
+    goals = [];
+    affirmations = [];
+    chatMessages = [];
+    expenses = [];
+    brainDumpDrafts = [];
+  }
+
+  Future<void> _syncWorkspaceFromBackend({bool replaceWhenEmpty = false}) async {
     if (!backendConnected) return;
+    final shouldReplace = replaceWhenEmpty || (authToken != null && authToken!.isNotEmpty);
     final results = await Future.wait([
       _api.get('/tasks'),
       _api.get('/reminders'),
       _api.get('/shopping'),
       _api.get('/memories'),
+      _api.get('/keep-for-later'),
+      _api.get('/goals'),
+      _api.get('/affirmations'),
+      _api.get('/ai/messages'),
+      _api.get('/phase2/budget'),
+      _api.get('/phase2/email-reports'),
+      _api.get('/phase2/productivity'),
     ]);
 
     final remoteTasks = results[0]?['tasks'];
-    if (remoteTasks is List && remoteTasks.isNotEmpty) {
+    if (remoteTasks is List && (shouldReplace || remoteTasks.isNotEmpty)) {
       tasks = remoteTasks
           .map((e) => TaskModel.fromJson(Map<String, dynamic>.from(e as Map)))
           .toList();
     }
     final remoteReminders = results[1]?['reminders'];
-    if (remoteReminders is List && remoteReminders.isNotEmpty) {
+    if (remoteReminders is List && (shouldReplace || remoteReminders.isNotEmpty)) {
       reminders = remoteReminders
           .map((e) => ReminderModel.fromJson(Map<String, dynamic>.from(e as Map)))
           .toList();
     }
     final remoteShopping = results[2]?['items'];
-    if (remoteShopping is List && remoteShopping.isNotEmpty) {
+    if (remoteShopping is List && (shouldReplace || remoteShopping.isNotEmpty)) {
       shoppingItems = remoteShopping
           .map((e) => ShoppingItemModel.fromJson(Map<String, dynamic>.from(e as Map)))
           .toList();
     }
     final remoteMemories = results[3]?['memories'];
-    if (remoteMemories is List && remoteMemories.isNotEmpty) {
+    if (remoteMemories is List && (shouldReplace || remoteMemories.isNotEmpty)) {
       memories = remoteMemories
           .map((e) => MemoryModel.fromJson(Map<String, dynamic>.from(e as Map)))
           .toList();
+    }
+    final remoteKeep = results[4]?['items'];
+    if (remoteKeep is List && (shouldReplace || remoteKeep.isNotEmpty)) {
+      keepForLaterItems = remoteKeep
+          .map((e) => KeepForLaterModel.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+    }
+    final remoteGoals = results[5]?['goals'];
+    if (remoteGoals is List && (shouldReplace || remoteGoals.isNotEmpty)) {
+      goals = remoteGoals
+          .map((e) => GoalModel.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+    }
+    final remoteAffirmations = results[6]?['affirmations'];
+    if (remoteAffirmations is List && (shouldReplace || remoteAffirmations.isNotEmpty)) {
+      affirmations = remoteAffirmations
+          .map((e) => AffirmationModel.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+    }
+    final remoteMessages = results[7]?['messages'];
+    if (remoteMessages is List && (shouldReplace || remoteMessages.isNotEmpty)) {
+      chatMessages = remoteMessages
+          .map((e) => ChatMessageModel.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+    }
+    final budgetData = results[8];
+    if (budgetData != null) {
+      final budgetMap = budgetData['budget'];
+      if (budgetMap is Map && budgetMap['monthly_limit'] is num) {
+        monthlyBudgetLimit = (budgetMap['monthly_limit'] as num).toInt();
+      }
+      final remoteExpenses = budgetData['expenses'];
+      if (remoteExpenses is List && (shouldReplace || remoteExpenses.isNotEmpty)) {
+        expenses = remoteExpenses
+            .map((e) => ExpenseModel.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
+      }
+    }
+    final prefsMap = results[9]?['prefs'];
+    if (prefsMap is Map) {
+      emailReportsEnabled = prefsMap['enabled'] as bool? ?? emailReportsEnabled;
+      weeklyEmailSummary =
+          prefsMap['weekly_summary_enabled'] as bool? ?? weeklyEmailSummary;
+      monthlyEmailReview =
+          prefsMap['monthly_review_enabled'] as bool? ?? monthlyEmailReview;
+    }
+    final prodData = results[10];
+    if (prodData != null) {
+      if (prodData['score'] is num) {
+        productivityScore = (prodData['score'] as num).toInt();
+      }
+      if (prodData['statusLabel'] is String) {
+        productivityStatus = prodData['statusLabel'] as String;
+      }
+      final bars = prodData['weeklyBars'];
+      if (bars is List && bars.length == 7) {
+        productivityBars = bars
+            .map((b) => (((b as Map)['ratio'] as num?)?.toDouble() ?? 0.5) * 90.0)
+            .toList();
+      }
     }
   }
 
@@ -530,6 +615,8 @@ class AppState extends ChangeNotifier {
           );
           _api.userId = user.id;
         }
+        _clearLocalWorkspace();
+        await _syncWorkspaceFromBackend(replaceWhenEmpty: true);
         await _persist();
         notifyListeners();
         return null;
@@ -628,7 +715,8 @@ class AppState extends ChangeNotifier {
           ).copyWith(onboardingCompleted: true);
           _api.userId = user.id;
         }
-        await _syncWorkspaceFromBackend();
+        _clearLocalWorkspace();
+        await _syncWorkspaceFromBackend(replaceWhenEmpty: true);
         await _persist();
         notifyListeners();
         return null;
@@ -666,6 +754,59 @@ class AppState extends ChangeNotifier {
     return res.data?['message']?.toString() ?? 'Recovery link sent to ${email.trim()}';
   }
 
+  /// Launches the Google OAuth 2.0 flow in the external browser and expects a redirect back via deep link.
+  Future<String?> startGoogleOAuth() async {
+    if (!backendConnected) {
+      backendConnected = await _api.checkHealth();
+    }
+    if (!backendConnected) {
+      return 'Backend server is unreachable right now. Check your internet connection.';
+    }
+    final uri = Uri.parse('${_api.baseUrl}/auth/google/start').replace(
+      queryParameters: {'redirect_uri': 'aidailyhelper://auth/callback'},
+    );
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!launched) {
+      return 'Could not open browser for Google Sign-In.';
+    }
+    return null;
+  }
+
+  /// Handles incoming deep-link callbacks (`aidailyhelper://auth/callback?token=...`).
+  Future<String?> handleAuthDeepLink(Uri uri) async {
+    if (uri.scheme != 'aidailyhelper' || uri.host != 'auth') {
+      return null;
+    }
+    final err = uri.queryParameters['error'];
+    if (err != null && err.trim().isNotEmpty) {
+      return err.trim();
+    }
+    final token = uri.queryParameters['token']?.trim();
+    if (token == null || token.isEmpty) {
+      return 'Missing sign-in token from Google callback.';
+    }
+
+    backendConnected = await _api.checkHealth();
+    authToken = token;
+    _api.authToken = token;
+    final me = await _api.get('/auth/me');
+    if (me == null || me['user'] is! Map) {
+      authToken = null;
+      _api.authToken = null;
+      return 'Could not verify your Google session. Please try again.';
+    }
+
+    user = UserProfileModel.fromJson(
+      Map<String, dynamic>.from(me['user'] as Map),
+    ).copyWith(onboardingCompleted: true);
+    _api.userId = user.id;
+    _clearLocalWorkspace();
+    await _syncWorkspaceFromBackend(replaceWhenEmpty: true);
+    await _persist();
+    notifyListeners();
+    return null;
+  }
+
   Future<void> logOut() async {
     authToken = null;
     _api.authToken = null;
@@ -686,18 +827,30 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> addTask(String title, {String subtitle = 'Today · 5:00 PM', String section = 'today', String priority = 'normal'}) async {
+    final tempId = 't_${DateTime.now().millisecondsSinceEpoch}';
+    final dueAt = DateTime.now().add(const Duration(hours: 2));
     final task = TaskModel(
-      id: 't_${DateTime.now().millisecondsSinceEpoch}',
+      id: tempId,
       title: title.trim(),
       subtitle: subtitle,
-      dueAt: DateTime.now().add(const Duration(hours: 2)),
+      dueAt: dueAt,
       priority: priority,
       section: section,
     );
     tasks = [task, ...tasks];
     await _persist();
     notifyListeners();
-    _api.post('/tasks', {'title': task.title, 'priority': priority});
+    final remote = await _api.post('/tasks', {
+      'title': task.title,
+      'priority': priority,
+      'due_at': dueAt.toIso8601String(),
+    });
+    if (remote != null && remote['task'] is Map) {
+      final serverTask = TaskModel.fromJson(Map<String, dynamic>.from(remote['task'] as Map));
+      tasks = tasks.map((t) => t.id == tempId ? serverTask : t).toList();
+      await _persist();
+      notifyListeners();
+    }
   }
 
   Future<void> deleteTask(String id) async {
@@ -764,12 +917,15 @@ class AppState extends ChangeNotifier {
         .toList();
     await _persist();
     notifyListeners();
+    final toggled = reminders.firstWhere((r) => r.id == id);
+    _api.patch('/reminders/$id', {'status': toggled.completed ? 'completed' : 'pending'});
   }
 
   Future<void> addReminder(String title, {String displayTime = 'Tomorrow · 5:00 PM', DateTime? when}) async {
     final targetTime = when ?? DateTime.now().add(const Duration(days: 1));
+    final tempId = 'r_${DateTime.now().millisecondsSinceEpoch}';
     final rem = ReminderModel(
-      id: 'r_${DateTime.now().millisecondsSinceEpoch}',
+      id: tempId,
       title: title.trim(),
       displayTime: displayTime,
       remindAt: targetTime,
@@ -783,13 +939,20 @@ class AppState extends ChangeNotifier {
       title: rem.title,
       when: targetTime,
     );
-    _api.post('/reminders', {'title': rem.title, 'remind_at': targetTime.toIso8601String()});
+    final remote = await _api.post('/reminders', {'title': rem.title, 'remind_at': targetTime.toIso8601String()});
+    if (remote != null && remote['reminder'] is Map) {
+      final serverRem = ReminderModel.fromJson(Map<String, dynamic>.from(remote['reminder'] as Map));
+      reminders = reminders.map((r) => r.id == tempId ? serverRem : r).toList();
+      await _persist();
+      notifyListeners();
+    }
   }
 
   Future<void> deleteReminder(String id) async {
     reminders = reminders.where((r) => r.id != id).toList();
     await _persist();
     notifyListeners();
+    _api.delete('/reminders/$id');
   }
 
   Future<void> editReminder(String id, {required String title, required String displayTime}) async {
@@ -799,6 +962,7 @@ class AppState extends ChangeNotifier {
     }).toList();
     await _persist();
     notifyListeners();
+    _api.patch('/reminders/$id', {'title': title.trim()});
   }
 
   // ---------------- SHOPPING ----------------
@@ -808,24 +972,34 @@ class AppState extends ChangeNotifier {
         .toList();
     await _persist();
     notifyListeners();
+    final toggled = shoppingItems.firstWhere((s) => s.id == id);
+    _api.patch('/shopping/$id', {'completed': toggled.completed});
   }
 
   Future<void> addShoppingItem(String item, {String category = 'General'}) async {
+    final tempId = 's_${DateTime.now().millisecondsSinceEpoch}';
     final created = ShoppingItemModel(
-      id: 's_${DateTime.now().millisecondsSinceEpoch}',
+      id: tempId,
       item: item.trim(),
       category: category,
     );
     shoppingItems = [created, ...shoppingItems];
     await _persist();
     notifyListeners();
-    _api.post('/shopping', {'item': created.item, 'category': category});
+    final remote = await _api.post('/shopping', {'item': created.item, 'category': category});
+    if (remote != null && remote['item'] is Map) {
+      final serverItem = ShoppingItemModel.fromJson(Map<String, dynamic>.from(remote['item'] as Map));
+      shoppingItems = shoppingItems.map((s) => s.id == tempId ? serverItem : s).toList();
+      await _persist();
+      notifyListeners();
+    }
   }
 
   Future<void> deleteShoppingItem(String id) async {
     shoppingItems = shoppingItems.where((s) => s.id != id).toList();
     await _persist();
     notifyListeners();
+    _api.delete('/shopping/$id');
   }
 
   Future<void> editShoppingItem(String id, {required String item, required String category}) async {
@@ -834,12 +1008,14 @@ class AppState extends ChangeNotifier {
         .toList();
     await _persist();
     notifyListeners();
+    _api.patch('/shopping/$id', {'item': item.trim(), 'category': category});
   }
 
   Future<void> clearBoughtShopping() async {
     shoppingItems = shoppingItems.where((s) => !s.completed).toList();
     await _persist();
     notifyListeners();
+    _api.delete('/shopping/completed');
   }
 
   // ---------------- MEMORIES & KEEP FOR LATER ----------------
@@ -849,8 +1025,9 @@ class AppState extends ChangeNotifier {
         : category == 'people'
             ? 'user'
             : 'note';
+    final tempId = 'm_${DateTime.now().millisecondsSinceEpoch}';
     final created = MemoryModel(
-      id: 'm_${DateTime.now().millisecondsSinceEpoch}',
+      id: tempId,
       title: title.trim(),
       content: content.trim(),
       subtitle: subtitle,
@@ -860,12 +1037,18 @@ class AppState extends ChangeNotifier {
     memories = [created, ...memories];
     await _persist();
     notifyListeners();
-    _api.post('/memories', {
+    final remote = await _api.post('/memories', {
       'title': created.title,
       'content': created.content,
       'category': category,
       'subtitle': subtitle,
     });
+    if (remote != null && remote['memory'] is Map) {
+      final serverMem = MemoryModel.fromJson(Map<String, dynamic>.from(remote['memory'] as Map));
+      memories = memories.map((m) => m.id == tempId ? serverMem : m).toList();
+      await _persist();
+      notifyListeners();
+    }
   }
 
   Future<void> deleteMemory(String id) async {
@@ -887,19 +1070,26 @@ class AppState extends ChangeNotifier {
         : category == 'people'
             ? 'user'
             : 'note';
+    final cleanSubtitle = subtitle.trim().isEmpty ? 'Saved by you' : subtitle.trim();
     memories = memories.map((m) {
       if (m.id != id) return m;
       return MemoryModel(
         id: m.id,
         title: title.trim(),
         content: content.trim(),
-        subtitle: subtitle.trim().isEmpty ? 'Saved by you' : subtitle.trim(),
+        subtitle: cleanSubtitle,
         category: category,
         iconKind: iconKind,
       );
     }).toList();
     await _persist();
     notifyListeners();
+    _api.patch('/memories/$id', {
+      'title': title.trim(),
+      'content': content.trim(),
+      'category': category,
+      'subtitle': cleanSubtitle,
+    });
   }
 
   Future<void> clearAllMemories() async {
@@ -910,25 +1100,44 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> addKeepForLater(String title) async {
+    final tempId = 'k_${DateTime.now().millisecondsSinceEpoch}';
     final created = KeepForLaterModel(
-      id: 'k_${DateTime.now().millisecondsSinceEpoch}',
+      id: tempId,
       title: title.trim(),
       capturedLabel: 'Today · Just now',
     );
     keepForLaterItems = [created, ...keepForLaterItems];
     await _persist();
     notifyListeners();
+    final remote = await _api.post('/keep-for-later', {'title': created.title});
+    if (remote != null && remote['item'] is Map) {
+      final serverKeep = KeepForLaterModel.fromJson(Map<String, dynamic>.from(remote['item'] as Map));
+      keepForLaterItems = keepForLaterItems.map((k) => k.id == tempId ? serverKeep : k).toList();
+      await _persist();
+      notifyListeners();
+    }
   }
 
   Future<void> deleteKeepForLater(String id) async {
     keepForLaterItems = keepForLaterItems.where((k) => k.id != id).toList();
     await _persist();
     notifyListeners();
+    _api.delete('/keep-for-later/$id');
   }
 
   Future<void> moveKeepToMemories(String id) async {
     final item = keepForLaterItems.firstWhere((e) => e.id == id);
     keepForLaterItems = keepForLaterItems.where((e) => e.id != id).toList();
+    final remote = backendConnected
+        ? await _api.post('/keep-for-later/$id/move-to-memory', {})
+        : null;
+    if (remote != null && remote['memory'] is Map) {
+      final mem = MemoryModel.fromJson(Map<String, dynamic>.from(remote['memory'] as Map));
+      memories = [mem, ...memories];
+      await _persist();
+      notifyListeners();
+      return;
+    }
     await addMemory(item.title, item.title, category: 'preferences', subtitle: 'Moved from Keep for later');
   }
 
@@ -941,17 +1150,20 @@ class AppState extends ChangeNotifier {
     }).toList();
     await _persist();
     notifyListeners();
+    _api.post('/goals/$id/increment', {});
   }
 
   Future<void> deleteGoal(String id) async {
     goals = goals.where((g) => g.id != id).toList();
     await _persist();
     notifyListeners();
+    _api.delete('/goals/$id');
   }
 
   Future<void> addGoal(String title, int target, String unitLabel, {String period = 'week'}) async {
+    final tempId = 'g_${DateTime.now().millisecondsSinceEpoch}';
     final created = GoalModel(
-      id: 'g_${DateTime.now().millisecondsSinceEpoch}',
+      id: tempId,
       title: title.trim(),
       currentValue: 0,
       targetValue: target,
@@ -961,13 +1173,26 @@ class AppState extends ChangeNotifier {
     goals = [...goals, created];
     await _persist();
     notifyListeners();
+    final remote = await _api.post('/goals', {
+      'title': created.title,
+      'target_value': target,
+      'unit_label': unitLabel,
+      'period': period,
+    });
+    if (remote != null && remote['goal'] is Map) {
+      final serverGoal = GoalModel.fromJson(Map<String, dynamic>.from(remote['goal'] as Map));
+      goals = goals.map((g) => g.id == tempId ? serverGoal : g).toList();
+      await _persist();
+      notifyListeners();
+    }
   }
 
   Future<void> addAffirmation(String quote) async {
     final formatted = quote.startsWith('“') ? quote : '“${quote.trim()}”';
+    final tempId = 'a_${DateTime.now().millisecondsSinceEpoch}';
     affirmations = [
       AffirmationModel(
-        id: 'a_${DateTime.now().millisecondsSinceEpoch}',
+        id: tempId,
         quote: formatted,
         savedLabel: _formattedSavedDate(),
       ),
@@ -975,6 +1200,13 @@ class AppState extends ChangeNotifier {
     ];
     await _persist();
     notifyListeners();
+    final remote = await _api.post('/affirmations', {'quote': quote.trim()});
+    if (remote != null && remote['affirmation'] is Map) {
+      final serverAff = AffirmationModel.fromJson(Map<String, dynamic>.from(remote['affirmation'] as Map));
+      affirmations = affirmations.map((a) => a.id == tempId ? serverAff : a).toList();
+      await _persist();
+      notifyListeners();
+    }
   }
 
   Future<void> editAffirmation(String id, String quote) async {
@@ -985,12 +1217,14 @@ class AppState extends ChangeNotifier {
     }).toList();
     await _persist();
     notifyListeners();
+    _api.patch('/affirmations/$id', {'quote': quote.trim()});
   }
 
   Future<void> deleteAffirmation(String id) async {
     affirmations = affirmations.where((a) => a.id != id).toList();
     await _persist();
     notifyListeners();
+    _api.delete('/affirmations/$id');
   }
 
   Future<void> scheduleAffirmationReminder(String label) async {
@@ -1052,6 +1286,7 @@ class AppState extends ChangeNotifier {
         aiCredits: (user.aiCredits - 1).clamp(0, 9999),
       );
       isAiThinking = false;
+      await _syncWorkspaceFromBackend(replaceWhenEmpty: true);
       await _persist();
       notifyListeners();
       if (speakReply) await _voice.speak(replyText);
@@ -1156,6 +1391,7 @@ class AppState extends ChangeNotifier {
     chatMessages = [];
     await _persist();
     notifyListeners();
+    _api.delete('/ai/messages');
   }
 
   Future<void> confirmPendingChatAction(String messageId) async {
@@ -1345,18 +1581,21 @@ class AppState extends ChangeNotifier {
     monthlyBudgetLimit = limit.clamp(1000, 10000000);
     await _persist();
     notifyListeners();
+    _api.patch('/phase2/budget', {'monthly_limit': monthlyBudgetLimit});
   }
 
   Future<void> deleteExpense(String id) async {
     expenses = expenses.where((e) => e.id != id).toList();
     await _persist();
     notifyListeners();
+    _api.delete('/phase2/budget/expense/$id');
   }
 
   Future<void> addExpense(String title, int amount, String category) async {
+    final tempId = 'e_${DateTime.now().millisecondsSinceEpoch}';
     expenses = [
       ExpenseModel(
-        id: 'e_${DateTime.now().millisecondsSinceEpoch}',
+        id: tempId,
         category: category,
         title: title,
         amount: amount,
@@ -1365,6 +1604,17 @@ class AppState extends ChangeNotifier {
     ];
     await _persist();
     notifyListeners();
+    final remote = await _api.post('/phase2/budget/expense', {
+      'title': title.trim(),
+      'amount': amount,
+      'category': category,
+    });
+    if (remote != null && remote['expense'] is Map) {
+      final serverExp = ExpenseModel.fromJson(Map<String, dynamic>.from(remote['expense'] as Map));
+      expenses = expenses.map((e) => e.id == tempId ? serverExp : e).toList();
+      await _persist();
+      notifyListeners();
+    }
   }
 
   Future<void> updateEmailReportPrefs({
@@ -1377,6 +1627,11 @@ class AppState extends ChangeNotifier {
     monthlyEmailReview = monthly ?? monthlyEmailReview;
     await _persist();
     notifyListeners();
+    _api.patch('/phase2/email-reports', {
+      'enabled': emailReportsEnabled,
+      'weekly_summary_enabled': weeklyEmailSummary,
+      'monthly_review_enabled': monthlyEmailReview,
+    });
   }
 
   String exportAllDataJson() {

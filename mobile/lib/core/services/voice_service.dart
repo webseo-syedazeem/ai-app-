@@ -8,31 +8,50 @@ class VoiceService {
   bool _sttInitialized = false;
   bool _ttsInitialized = false;
 
+  bool get isListening => _stt.isListening;
+
   Future<bool> startListening({
     required ValueChanged<String> onTranscript,
-    VoidCallback? onError,
+    ValueChanged<double>? onSoundLevel,
+    ValueChanged<String>? onStatus,
+    ValueChanged<String>? onError,
   }) async {
     try {
       if (!_sttInitialized) {
-        _sttInitialized = await _stt.initialize(
-          onError: (_) => onError?.call(),
+        final ok = await _stt.initialize(
+          onError: (err) => onError?.call(err.errorMsg),
+          onStatus: (status) => onStatus?.call(status),
         );
+        _sttInitialized = ok;
       }
       if (!_sttInitialized || !_stt.isAvailable) {
+        onError?.call('Speech recognition unavailable on this device.');
         return false;
       }
+
+      if (_stt.isListening) {
+        await _stt.stop();
+      }
+
       await _stt.listen(
+        onSoundLevelChange: (level) => onSoundLevel?.call(level),
         onResult: (result) {
-          if (result.recognizedWords.isNotEmpty) {
+          if (result.recognizedWords.trim().isNotEmpty) {
             onTranscript(result.recognizedWords);
           }
         },
         listenOptions: SpeechListenOptions(
           listenMode: ListenMode.dictation,
+          listenFor: const Duration(seconds: 60),
+          pauseFor: const Duration(seconds: 5),
+          partialResults: true,
+          cancelOnError: false,
         ),
       );
       return true;
-    } catch (_) {
+    } catch (e) {
+      _sttInitialized = false;
+      onError?.call(e.toString());
       return false;
     }
   }

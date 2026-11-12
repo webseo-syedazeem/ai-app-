@@ -34,11 +34,24 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
 
   late final AnimationController _waveCtrl;
   Timer? _clockTimer;
-  int _seconds = 7;
+  int _seconds = 0;
   bool _paused = false;
   bool _brainDumpMode = false;
   bool _submitting = false;
-  String _transcript = 'Remind me to call Ali tomorrow at 5 PM.';
+  bool _micAvailable = true;
+  double _soundLevel = 0.0;
+  String _committedPrefix = '';
+  String _currentSegment = '';
+  String _micWarning = '';
+
+  String get _transcript {
+    final a = _committedPrefix.trim();
+    final b = _currentSegment.trim();
+    if (a.isEmpty) return b;
+    if (b.isEmpty) return a;
+    if (b.toLowerCase().startsWith(a.toLowerCase())) return b;
+    return '$a $b';
+  }
 
   @override
   void initState() {
@@ -55,13 +68,48 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
   }
 
   Future<void> _beginStt() async {
-    await widget.appState.voice.startListening(
+    if (!mounted || _paused || _submitting) return;
+    final ok = await widget.appState.voice.startListening(
       onTranscript: (text) {
-        if (mounted && text.trim().isNotEmpty) {
-          setState(() => _transcript = text);
+        if (!mounted) return;
+        setState(() {
+          _micAvailable = true;
+          _micWarning = '';
+          _currentSegment = text;
+        });
+      },
+      onSoundLevel: (db) {
+        if (!mounted) return;
+        // Android dB usually ranges roughly from -2 to +10.
+        final normalized = ((db + 2.0) / 12.0).clamp(0.0, 1.0);
+        setState(() => _soundLevel = normalized);
+      },
+      onStatus: (status) {
+        if (!mounted || _paused || _submitting) return;
+        if (status == 'done' || status == 'notListening') {
+          if (_currentSegment.trim().isNotEmpty) {
+            _committedPrefix = _transcript;
+            _currentSegment = '';
+          }
+        }
+      },
+      onError: (msg) {
+        if (!mounted) return;
+        final lower = msg.toLowerCase();
+        if (lower.contains('permission') || lower.contains('unavailable')) {
+          setState(() {
+            _micAvailable = false;
+            _micWarning = 'Allow microphone permission or tap Edit note to type.';
+          });
         }
       },
     );
+    if (!ok && mounted) {
+      setState(() {
+        _micAvailable = false;
+        _micWarning = 'Voice recognition unavailable — tap Edit note or Retry mic.';
+      });
+    }
   }
 
   void _startClock() {
@@ -86,11 +134,43 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
     return '$m:$s';
   }
 
+  Future<void> _togglePause() async {
+    if (_submitting) return;
+    if (!_paused) {
+      setState(() {
+        _paused = true;
+        _soundLevel = 0.0;
+        _committedPrefix = _transcript;
+        _currentSegment = '';
+      });
+      await widget.appState.voice.stopListening();
+    } else {
+      setState(() {
+        _paused = false;
+        _micWarning = '';
+      });
+      await _beginStt();
+    }
+  }
+
   Future<void> _stopAndSubmit() async {
     if (_submitting) return;
     setState(() => _submitting = true);
     await widget.appState.voice.stopListening();
+    // Allow platform speech engine a brief moment to flush final recognition words.
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    if (!mounted) return;
+
     final text = _transcript.trim();
+    if (text.isEmpty) {
+      setState(() => _submitting = false);
+      showAppToast(context, 'No voice captured yet — speak clearly or tap Edit note.');
+      if (!_paused) {
+        _beginStt();
+      }
+      return;
+    }
+
     final looksLikeBrainDump =
         _brainDumpMode || text.split(RegExp(r',|\band\b|\baur\b', caseSensitive: false)).length >= 3;
     if (looksLikeBrainDump) {
@@ -102,12 +182,7 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
   }
 
   void _switchMode(bool brainDump) {
-    setState(() {
-      _brainDumpMode = brainDump;
-      _transcript = brainDump
-          ? 'Prepare the project update tomorrow, email the meeting notes Friday, call Ali tomorrow at 5 PM, buy eggs, bread and detergent'
-          : 'Remind me to call Ali tomorrow at 5 PM.';
-    });
+    setState(() => _brainDumpMode = brainDump);
   }
 
   void _editTranscript() {
@@ -130,9 +205,10 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
           PrimaryButton(
             label: 'Update transcript',
             onTap: () {
-              if (ctrl.text.trim().isNotEmpty) {
-                setState(() => _transcript = ctrl.text.trim());
-              }
+              setState(() {
+                _committedPrefix = ctrl.text.trim();
+                _currentSegment = '';
+              });
               Navigator.pop(sheetCtx);
             },
           ),
@@ -357,13 +433,23 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
                           ),
                           Expanded(
                             child: Text(
-                              '“$_transcript”',
+                              _transcript.isNotEmpty
+                                  ? '“$_transcript”'
+                                  : (_micWarning.isNotEmpty
+                                      ? _micWarning
+                                      : (_brainDumpMode
+                                          ? 'Speak naturally — tasks, reminders & shopping...'
+                                          : 'Speak clearly now — e.g. "Remind me to call Ali at 5 PM"')),
                               maxLines: 3,
                               overflow: TextOverflow.ellipsis,
                               style: AppTheme.inter(
-                                size: 15,
-                                weight: FontWeight.w600,
-                                color: Colors.white.withValues(alpha: 0.95),
+                                size: _transcript.isNotEmpty ? 15 : 13.5,
+                                weight: _transcript.isNotEmpty ? FontWeight.w600 : FontWeight.w500,
+                                color: _transcript.isNotEmpty
+                                    ? Colors.white.withValues(alpha: 0.95)
+                                    : (_micWarning.isNotEmpty
+                                        ? const Color(0xFFF6B759)
+                                        : Colors.white.withValues(alpha: 0.62)),
                                 height: 1.5,
                               ),
                             ),
@@ -374,6 +460,33 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
+                          if (!_micAvailable) ...[
+                            BouncyTap(
+                              onTap: () {
+                                setState(() {
+                                  _paused = false;
+                                  _micWarning = '';
+                                });
+                                _beginStt();
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF6B759).withValues(alpha: 0.16),
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                child: Text(
+                                  'Retry mic',
+                                  style: AppTheme.inter(
+                                    size: 10.5,
+                                    weight: FontWeight.w700,
+                                    color: const Color(0xFFF6B759),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                          ],
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                             decoration: BoxDecoration(
@@ -416,11 +529,14 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
                     return Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: List.generate(_baseHeights.length, (i) {
+                        final liveBoost = _soundLevel > 0.05 ? _soundLevel * 0.42 : 0.0;
                         final factor = _paused
                             ? 0.42
-                            : 0.65 +
-                                0.35 *
-                                    math.sin(_waveCtrl.value * math.pi * 2 + i * 0.45).abs();
+                            : (0.58 +
+                                    liveBoost +
+                                    0.32 *
+                                        math.sin(_waveCtrl.value * math.pi * 2 + i * 0.45).abs())
+                                .clamp(0.35, 1.15);
                         return Container(
                           width: 4.5,
                           height: (_baseHeights[i] * 0.85 * factor).clamp(10.0, 118.0),
@@ -489,7 +605,7 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
                     _StudioCircleButton(
                       icon: _paused ? AppIconType.mic : AppIconType.pause,
                       label: _paused ? 'Resume' : 'Pause',
-                      onTap: () => setState(() => _paused = !_paused),
+                      onTap: _togglePause,
                     ),
                     Column(
                       mainAxisSize: MainAxisSize.min,

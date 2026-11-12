@@ -95,3 +95,40 @@ export function sanitizeUser(user: UserProfile): Omit<UserProfile, 'password_has
   const { password_hash: _ignored, ...safe } = user;
   return safe;
 }
+
+/**
+ * Signs a short-lived HMAC state token for OAuth redirect flows.
+ */
+export function signOAuthState(redirectUri: string): string {
+  const exp = Math.floor(Date.now() / 1000) + 600;
+  const payload = Buffer.from(JSON.stringify({ redirectUri, exp })).toString('base64url');
+  const sig = crypto.createHmac('sha256', env.jwtSecret).update(payload).digest('base64url');
+  return `${payload}.${sig}`;
+}
+
+/**
+ * Verifies an OAuth state token and extracts its target app redirect URI.
+ */
+export function verifyOAuthState(state: string): { redirectUri: string } | null {
+  const parts = state.trim().split('.');
+  if (parts.length !== 2) return null;
+  const [payload, sig] = parts;
+  if (!payload || !sig) return null;
+
+  const expected = crypto.createHmac('sha256', env.jwtSecret).update(payload).digest('base64url');
+  const a = Buffer.from(sig);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as {
+      redirectUri?: string;
+      exp?: number;
+    };
+    if (!parsed.redirectUri || typeof parsed.exp !== 'number') return null;
+    if (parsed.exp < Math.floor(Date.now() / 1000)) return null;
+    return { redirectUri: parsed.redirectUri };
+  } catch {
+    return null;
+  }
+}

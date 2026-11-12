@@ -22,8 +22,13 @@ class ProductivityScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final completedTasks = appState.tasks.where((t) => t.completed).length;
     final completedGoals = appState.goals.where((g) => g.isCompleted).length;
-    final score = (74 + completedTasks * 4 + completedGoals * 3).clamp(0, 100);
-    const barHeights = [41.0, 66.0, 33.0, 72.0, 90.0, 49.0, 70.0];
+    final score =
+        appState.productivityScore ?? (62 + completedTasks * 6 + completedGoals * 12).clamp(0, 100);
+    final statusLabel = appState.productivityStatus ??
+        (score >= 85 ? 'Thriving' : (score >= 70 ? 'On track' : 'Building momentum'));
+    final barHeights = appState.productivityBars.length == 7
+        ? appState.productivityBars
+        : const [41.0, 66.0, 33.0, 72.0, 90.0, 49.0, 70.0];
     const barLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
     const barDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
@@ -120,7 +125,7 @@ class ProductivityScreen extends StatelessWidget {
                                   ),
                                   const SizedBox(height: 8),
                                   Text(
-                                    score >= 85 ? 'Thriving' : 'On track',
+                                    statusLabel,
                                     style: AppTheme.inter(size: 25, weight: FontWeight.w800),
                                   ),
                                   const SizedBox(height: 6),
@@ -149,16 +154,16 @@ class ProductivityScreen extends StatelessWidget {
                             _MomentumRow(
                               icon: AppIconType.checkCircle,
                               tone: TileTone.emerald,
-                              title: '${12 + completedTasks} tasks completed',
-                              subtitle: 'This week',
+                              title: '$completedTasks tasks completed',
+                              subtitle: '${appState.tasks.length} total tasks',
                               onTap: () => onSwitchTab(1),
                             ),
                             const Divider(height: 1, color: AppColors.divider),
                             _MomentumRow(
                               icon: AppIconType.checkCircle,
                               tone: TileTone.indigo,
-                              title: '${2 + completedGoals} goals achieved',
-                              subtitle: 'This week',
+                              title: '$completedGoals goals achieved',
+                              subtitle: '${appState.goals.length} active goals',
                               onTap: () => _showInsightsSheet(
                                 context,
                                 score,

@@ -1,4 +1,7 @@
+import 'dart:async';
+import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
+import '../core/widgets/warm_scaffold.dart';
 import '../features/assistant/ai_chat_screen.dart';
 import '../features/assistant/brain_dump_review_screen.dart';
 import '../features/assistant/voice_recording_screen.dart';
@@ -60,11 +63,44 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   late AppRoute _route;
   int _tabIndex = 0;
+  StreamSubscription<Uri>? _deepLinkSub;
+  final AppLinks _appLinks = AppLinks();
 
   @override
   void initState() {
     super.initState();
     _route = widget.initialRoute;
+    _initDeepLinks();
+  }
+
+  Future<void> _initDeepLinks() async {
+    try {
+      final initial = await _appLinks.getInitialLink();
+      if (initial != null) {
+        await _handleIncomingUri(initial);
+      }
+      _deepLinkSub = _appLinks.uriLinkStream.listen(_handleIncomingUri);
+    } catch (_) {
+      // Ignored in headless widget tests without platform channels.
+    }
+  }
+
+  Future<void> _handleIncomingUri(Uri uri) async {
+    if (uri.scheme != 'aidailyhelper' || uri.host != 'auth') return;
+    final err = await widget.appState.handleAuthDeepLink(uri);
+    if (!mounted) return;
+    if (err != null && err.isNotEmpty) {
+      showAppToast(context, err);
+      return;
+    }
+    showAppToast(context, 'Signed in as ${widget.appState.user.fullName}');
+    _switchTab(0);
+  }
+
+  @override
+  void dispose() {
+    _deepLinkSub?.cancel();
+    super.dispose();
   }
 
   @override
@@ -287,6 +323,7 @@ class _AppShellState extends State<AppShell> {
         return err;
       },
       onForgotPassword: (email) => widget.appState.requestPasswordReset(email),
+      onGoogleSignIn: () => widget.appState.startGoogleOAuth(),
     );
   }
 

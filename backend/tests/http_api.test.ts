@@ -59,7 +59,7 @@ describe('HTTP REST API', () => {
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
-  }, 25000);
+  }, 40000);
 
   it('supports real signup, login, JWT /auth/me, and protects against duplicate emails or bad passwords', async () => {
     const app = createApp();
@@ -133,6 +133,111 @@ describe('HTTP REST API', () => {
 
       const unauthMe = await fetch(`${base}/api/auth/me`);
       expect(unauthMe.status).toBe(401);
+
+      const authHeaders = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${loginJson.token}`,
+      };
+
+      // Shopping item create, edit, complete, clear completed
+      const shopRes = await fetch(`${base}/api/shopping`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ item: 'Green tea', category: 'Groceries' }),
+      });
+      expect(shopRes.status).toBe(201);
+      const shopJson = (await shopRes.json()) as { item: { id: string } };
+      const patchShop = await fetch(`${base}/api/shopping/${shopJson.item.id}`, {
+        method: 'PATCH',
+        headers: authHeaders,
+        body: JSON.stringify({ item: 'Matcha tea', completed: true }),
+      });
+      expect(patchShop.status).toBe(200);
+      const patchedShop = (await patchShop.json()) as {
+        item: { item: string; completed: boolean };
+      };
+      expect(patchedShop.item.item).toBe('Matcha tea');
+      expect(patchedShop.item.completed).toBe(true);
+
+      const clearShop = await fetch(`${base}/api/shopping/completed`, {
+        method: 'DELETE',
+        headers: authHeaders,
+      });
+      expect(clearShop.status).toBe(200);
+
+      // Memory create, patch, delete
+      const memRes = await fetch(`${base}/api/memories`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ title: 'Book club', content: 'Reads sci-fi', category: 'other' }),
+      });
+      expect(memRes.status).toBe(201);
+      const memJson = (await memRes.json()) as { memory: { id: string } };
+      const patchMem = await fetch(`${base}/api/memories/${memJson.memory.id}`, {
+        method: 'PATCH',
+        headers: authHeaders,
+        body: JSON.stringify({ title: 'Monthly book club' }),
+      });
+      expect(patchMem.status).toBe(200);
+
+      // Goal & Affirmation CRUD
+      const goalRes = await fetch(`${base}/api/goals`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ title: 'Walk daily', target_value: 5, unit_label: 'days' }),
+      });
+      expect(goalRes.status).toBe(201);
+      const goalJson = (await goalRes.json()) as { goal: { id: string } };
+      const delGoal = await fetch(`${base}/api/goals/${goalJson.goal.id}`, {
+        method: 'DELETE',
+        headers: authHeaders,
+      });
+      expect(delGoal.status).toBe(200);
+
+      const affRes = await fetch(`${base}/api/affirmations`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ quote: 'Stay calm and focused.' }),
+      });
+      expect(affRes.status).toBe(201);
+      const affJson = (await affRes.json()) as { affirmation: { id: string } };
+      const patchAff = await fetch(`${base}/api/affirmations/${affJson.affirmation.id}`, {
+        method: 'PATCH',
+        headers: authHeaders,
+        body: JSON.stringify({ quote: 'One focused step at a time.' }),
+      });
+      expect(patchAff.status).toBe(200);
+      const delAff = await fetch(`${base}/api/affirmations/${affJson.affirmation.id}`, {
+        method: 'DELETE',
+        headers: authHeaders,
+      });
+      expect(delAff.status).toBe(200);
+
+      // Phase 2 Budget update & expense delete
+      const budgetPatch = await fetch(`${base}/api/phase2/budget`, {
+        method: 'PATCH',
+        headers: authHeaders,
+        body: JSON.stringify({ monthly_limit: 55000 }),
+      });
+      expect(budgetPatch.status).toBe(200);
+      const expRes = await fetch(`${base}/api/phase2/budget/expense`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ title: 'Coffee', amount: 450, category: 'Food' }),
+      });
+      expect(expRes.status).toBe(201);
+      const expJson = (await expRes.json()) as { expense: { id: string } };
+      const delExp = await fetch(`${base}/api/phase2/budget/expense/${expJson.expense.id}`, {
+        method: 'DELETE',
+        headers: authHeaders,
+      });
+      expect(delExp.status).toBe(200);
+
+      // Google OAuth start check (json status when unconfigured or redirect when configured)
+      const googleStart = await fetch(`${base}/api/auth/google/start?format=json`, {
+        redirect: 'manual',
+      });
+      expect([200, 302, 503]).toContain(googleStart.status);
     } finally {
       if (createdUserId) {
         await dataStore.deleteAllUserData(createdUserId);

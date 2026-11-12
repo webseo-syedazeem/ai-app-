@@ -297,7 +297,8 @@ class KeepForLaterModel {
   factory KeepForLaterModel.fromJson(Map<String, dynamic> json) => KeepForLaterModel(
         id: json['id']?.toString() ?? '',
         title: json['title']?.toString() ?? '',
-        capturedLabel: json['captured_label']?.toString() ?? '',
+        capturedLabel: json['captured_label']?.toString() ??
+            (json['captured_at'] != null ? 'Captured earlier' : 'Today · Just now'),
       );
 }
 
@@ -344,15 +345,23 @@ class GoalModel {
         'icon_kind': iconKind,
       };
 
-  factory GoalModel.fromJson(Map<String, dynamic> json) => GoalModel(
-        id: json['id']?.toString() ?? '',
-        title: json['title']?.toString() ?? '',
-        currentValue: (json['current_value'] as num?)?.toInt() ?? 0,
-        targetValue: (json['target_value'] as num?)?.toInt() ?? 1,
-        unitLabel: json['unit_label']?.toString() ?? '',
-        period: json['period']?.toString() ?? 'week',
-        iconKind: json['icon_kind']?.toString() ?? 'briefcase',
-      );
+  factory GoalModel.fromJson(Map<String, dynamic> json) {
+    final category = json['category']?.toString() ?? '';
+    final fallbackIcon = category == 'learning'
+        ? 'book'
+        : category == 'shopping'
+            ? 'shopping'
+            : 'briefcase';
+    return GoalModel(
+      id: json['id']?.toString() ?? '',
+      title: json['title']?.toString() ?? '',
+      currentValue: (json['current_value'] as num?)?.toInt() ?? 0,
+      targetValue: (json['target_value'] as num?)?.toInt() ?? 1,
+      unitLabel: json['unit_label']?.toString() ?? '',
+      period: json['period']?.toString() ?? 'week',
+      iconKind: json['icon_kind']?.toString() ?? fallbackIcon,
+    );
+  }
 }
 
 class AffirmationModel {
@@ -375,7 +384,9 @@ class AffirmationModel {
   factory AffirmationModel.fromJson(Map<String, dynamic> json) => AffirmationModel(
         id: json['id']?.toString() ?? '',
         quote: json['quote']?.toString() ?? '',
-        savedLabel: json['saved_label']?.toString() ?? '',
+        savedLabel: json['saved_label']?.toString() ??
+            json['reminder_label']?.toString() ??
+            'Saved',
       );
 }
 
@@ -451,15 +462,21 @@ class ChatMessageModel {
         'time_label': timeLabel,
       };
 
-  factory ChatMessageModel.fromJson(Map<String, dynamic> json) => ChatMessageModel(
-        id: json['id']?.toString() ?? '',
-        isUser: json['is_user'] as bool? ?? false,
-        text: json['text']?.toString() ?? '',
-        pendingAction: json['pending_action'] != null
-            ? ChatPendingAction.fromJson(Map<String, dynamic>.from(json['pending_action']))
-            : null,
-        timeLabel: json['time_label']?.toString() ?? '',
-      );
+  factory ChatMessageModel.fromJson(Map<String, dynamic> json) {
+    final isUserMsg = json['is_user'] is bool
+        ? json['is_user'] as bool
+        : (json['role']?.toString() == 'user');
+    final bodyText = json['text']?.toString() ?? json['content']?.toString() ?? '';
+    return ChatMessageModel(
+      id: json['id']?.toString() ?? '',
+      isUser: isUserMsg,
+      text: bodyText,
+      pendingAction: json['pending_action'] != null
+          ? ChatPendingAction.fromJson(Map<String, dynamic>.from(json['pending_action']))
+          : null,
+      timeLabel: json['time_label']?.toString() ?? 'TODAY',
+    );
+  }
 }
 
 class BrainDumpDraftItem {
