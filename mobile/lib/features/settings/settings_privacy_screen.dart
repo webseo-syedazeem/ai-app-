@@ -672,9 +672,9 @@ class SettingsPrivacyScreen extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           for (final p in const [
-            ('free', 'Free — \$0', '5 AI actions/day · 5 voice interactions/day'),
-            ('plus', 'Plus — \$4.99/mo (Recommended)', 'Up to 1,000 AI actions/mo · 120 voice mins'),
-            ('pro', 'Pro — \$9.99/mo', 'Up to 3,000 AI actions/mo · 500 voice mins'),
+            ('free', 'Standard — Free', '5 AI actions/day · 5 voice interactions/day'),
+            ('plus', 'Plus — Free Access (Recommended)', 'Up to 1,000 AI actions/mo · 120 voice mins'),
+            ('pro', 'Pro — Free Access', 'Up to 3,000 AI actions/mo · 500 voice mins'),
           ])
             SheetActionRow(
               icon: appState.user.plan == p.$1

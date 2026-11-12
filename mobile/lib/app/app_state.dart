@@ -759,7 +759,7 @@ class AppState extends ChangeNotifier {
       }
     }
     await updatePreferences(plan: targetPlan);
-    return 'Switched to ${targetPlan.toUpperCase()} preview plan (add STRIPE_SECRET_KEY on Vercel for real billing)';
+    return 'Switched to ${targetPlan.toUpperCase()} plan (free access)';
   }
 
   /// Verifies Stripe Checkout deep link return and activates the upgraded plan.
