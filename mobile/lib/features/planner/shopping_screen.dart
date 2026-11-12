@@ -38,11 +38,12 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
         child: Column(
           children: [
             TopLineBar(
-              left: const AppBrandMark(size: 31),
+              left: const AppBrandMark(size: 33),
               title: 'Shopping list',
-              right: GestureDetector(
-                onTap: () => _showAddItemDialog(context),
-                child: const AppVectorIcon(AppIconType.plus, size: 21),
+              right: AppHeaderIconBtn(
+                icon: AppIconType.plus,
+                accent: true,
+                onTap: () => _showAddItemSheet(context),
               ),
             ),
             Expanded(
@@ -80,6 +81,57 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 16),
+                    PremiumCard(
+                      soft: true,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'BASKET PROGRESS',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppTheme.inter(
+                                    size: 9.5,
+                                    weight: FontWeight.w800,
+                                    color: AppColors.indigoText,
+                                    letterSpacing: 1.0,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  '${bought.length} of ${all.length} picked up',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppTheme.inter(
+                                    size: 11.5,
+                                    weight: FontWeight.w700,
+                                    color: AppColors.navy,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 9),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: LinearProgressIndicator(
+                              value: all.isEmpty ? 0 : bought.length / all.length,
+                              minHeight: 7,
+                              backgroundColor: Colors.white.withValues(alpha: 0.75),
+                              valueColor:
+                                  const AlwaysStoppedAnimation<Color>(AppColors.greenSuccess),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                     if (!_boughtTab) ...[
                       const StaggeredReveal(index: 1, child: SectionLabelRow(label: 'TO BUY')),
                       StaggeredReveal(
@@ -87,18 +139,28 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
                         child: _ShoppingCard(
                           items: toBuy,
                           onToggle: widget.appState.toggleShopping,
-                          onDelete: widget.appState.deleteShoppingItem,
+                          onMore: (item) => _showItemMenu(context, item),
                         ),
                       ),
                     ],
                     if (bought.isNotEmpty) ...[
-                      const StaggeredReveal(index: 3, child: SectionLabelRow(label: 'ALREADY IN THE BAG')),
+                      StaggeredReveal(
+                        index: 3,
+                        child: SectionLabelRow(
+                          label: 'ALREADY IN THE BAG',
+                          actionText: 'Clear bought',
+                          onAction: () {
+                            widget.appState.clearBoughtShopping();
+                            showAppToast(context, 'Cleared bought items');
+                          },
+                        ),
+                      ),
                       StaggeredReveal(
                         index: 4,
                         child: _ShoppingCard(
                           items: bought,
                           onToggle: widget.appState.toggleShopping,
-                          onDelete: widget.appState.deleteShoppingItem,
+                          onMore: (item) => _showItemMenu(context, item),
                         ),
                       ),
                     ],
@@ -108,48 +170,63 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
                         onTap: widget.onOpenVoice,
                         pressedScale: 0.98,
                         child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
-                        margin: const EdgeInsets.only(top: 6),
-                        decoration: BoxDecoration(
-                          color: AppColors.softLav,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: AppColors.softLavBorder),
-                        ),
-                        child: Row(
-                          children: [
-                            const AppVectorIcon(
-                              AppIconType.mic,
-                              size: 21,
-                              color: AppColors.indigo,
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Add by speaking',
-                                    style: AppTheme.inter(size: 11.5, weight: FontWeight.w700),
+                          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 15),
+                          margin: const EdgeInsets.only(top: 6),
+                          decoration: BoxDecoration(
+                            gradient: AppGradients.darkAiCard,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: const Color(0x26FFFFFF)),
+                            boxShadow: AppShadows.voiceFloat,
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  gradient: AppGradients.accentIndigo,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Center(
+                                  child: AppVectorIcon(
+                                    AppIconType.mic,
+                                    size: 20,
+                                    color: Colors.white,
                                   ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    '“Add rice, bananas and coffee.”',
-                                    style: AppTheme.inter(
-                                      size: 9.5,
-                                      color: const Color(0xFF8286A4),
-                                    ),
-                                  ),
-                                ],
+                                ),
                               ),
-                            ),
-                            const AppVectorIcon(
-                              AppIconType.chevronRight,
-                              size: 16,
-                              color: AppColors.navy,
-                            ),
-                          ],
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Add by speaking',
+                                      style: AppTheme.inter(
+                                        size: 14,
+                                        weight: FontWeight.w800,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      '“Add rice, bananas and coffee.”',
+                                      style: AppTheme.inter(
+                                        size: 11.5,
+                                        color: const Color(0xFFC1C5E4),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const AppVectorIcon(
+                                AppIconType.chevronRight,
+                                size: 17,
+                                color: Colors.white,
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
                       ),
                     ),
                   ],
@@ -162,30 +239,125 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
     );
   }
 
-  void _showAddItemDialog(BuildContext context) {
-    final ctrl = TextEditingController();
-    showDialog(
+  void _showItemMenu(BuildContext context, ShoppingItemModel item) {
+    final nameCtrl = TextEditingController(text: item.item);
+    String cat = item.category;
+    showPremiumSheet(
       context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: AppColors.card,
-        title: Text('Add shopping item', style: AppTheme.inter(size: 16, weight: FontWeight.w800)),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'e.g. Toothpaste'),
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (ctx, setModalState) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Edit shopping item', style: AppTheme.inter(size: 19, weight: FontWeight.w800)),
+            const SizedBox(height: 14),
+            PremiumSheetField(
+              controller: nameCtrl,
+              label: 'Item name',
+              hint: 'e.g. Toothpaste',
+            ),
+            const SizedBox(height: 12),
+            Text('Category', style: AppTheme.inter(size: 11, weight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final c in const [
+                  'Dairy & essentials',
+                  'Bakery',
+                  'Household',
+                  'Personal care',
+                  'Produce',
+                  'General',
+                ])
+                  AppChip(
+                    label: c,
+                    active: cat == c,
+                    onTap: () => setModalState(() => cat = c),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            PrimaryButton(
+              label: 'Save changes',
+              onTap: () {
+                if (nameCtrl.text.trim().isNotEmpty) {
+                  widget.appState.editShoppingItem(
+                    item.id,
+                    item: nameCtrl.text.trim(),
+                    category: cat,
+                  );
+                }
+                Navigator.pop(ctx);
+              },
+            ),
+            const SizedBox(height: 10),
+            PrimaryButton(
+              label: 'Remove item',
+              secondary: true,
+              trailingIcon: AppIconType.trash,
+              onTap: () {
+                widget.appState.deleteShoppingItem(item.id);
+                Navigator.pop(ctx);
+                showAppToast(context, 'Removed "${item.item}"');
+              },
+            ),
+          ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () {
-              if (ctrl.text.trim().isNotEmpty) {
-                widget.appState.addShoppingItem(ctrl.text.trim(), category: 'General');
-              }
-              Navigator.pop(context);
-            },
-            child: const Text('Add'),
-          ),
-        ],
+      ),
+    );
+  }
+
+  void _showAddItemSheet(BuildContext context) {
+    final ctrl = TextEditingController();
+    String category = 'General';
+    showPremiumSheet(
+      context: context,
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (ctx, setModalState) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Add shopping item', style: AppTheme.inter(size: 20, weight: FontWeight.w800)),
+            const SizedBox(height: 14),
+            PremiumSheetField(
+              controller: ctrl,
+              label: 'Item name',
+              hint: 'e.g. Toothpaste',
+              autofocus: true,
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final c in const [
+                  'Dairy & essentials',
+                  'Bakery',
+                  'Household',
+                  'Personal care',
+                  'General',
+                ])
+                  AppChip(
+                    label: c,
+                    active: category == c,
+                    onTap: () => setModalState(() => category = c),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            PrimaryButton(
+              label: 'Add to list',
+              trailingIcon: AppIconType.plus,
+              onTap: () {
+                if (ctrl.text.trim().isNotEmpty) {
+                  widget.appState.addShoppingItem(ctrl.text.trim(), category: category);
+                  Navigator.pop(ctx);
+                  showAppToast(context, 'Added "${ctrl.text.trim()}"');
+                }
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -194,12 +366,12 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
 class _ShoppingCard extends StatelessWidget {
   final List<ShoppingItemModel> items;
   final ValueChanged<String> onToggle;
-  final ValueChanged<String> onDelete;
+  final ValueChanged<ShoppingItemModel> onMore;
 
   const _ShoppingCard({
     required this.items,
     required this.onToggle,
-    required this.onDelete,
+    required this.onMore,
   });
 
   @override
@@ -215,21 +387,21 @@ class _ShoppingCard extends StatelessWidget {
     }
 
     return PremiumCard(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 6),
       child: Column(
         children: [
           for (int i = 0; i < items.length; i++) ...[
             if (i > 0) const Divider(height: 1, color: AppColors.divider),
             Container(
-              constraints: const BoxConstraints(minHeight: 58),
-              padding: const EdgeInsets.symmetric(vertical: 8),
+              constraints: const BoxConstraints(minHeight: 62),
+              padding: const EdgeInsets.symmetric(vertical: 9),
               child: Row(
                 children: [
                   SquareCheck(
                     checked: items[i].completed,
                     onTap: () => onToggle(items[i].id),
                   ),
-                  const SizedBox(width: 11),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: GestureDetector(
                       onTap: () => onToggle(items[i].id),
@@ -238,34 +410,39 @@ class _ShoppingCard extends StatelessWidget {
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            items[i].item,
+                          AnimatedDefaultTextStyle(
+                            duration: const Duration(milliseconds: 180),
                             style: AppTheme.inter(
-                              size: 12,
+                              size: 14,
                               weight: FontWeight.w700,
                               color: items[i].completed
-                                  ? const Color(0xFFA5A5B0)
+                                  ? const Color(0xFFA0A0AE)
                                   : AppColors.navy,
                               decoration: items[i].completed
                                   ? TextDecoration.lineThrough
                                   : null,
                             ),
+                            child: Text(items[i].item),
                           ),
                           const SizedBox(height: 3),
                           Text(
                             items[i].completed ? 'Checked off' : items[i].category,
-                            style: AppTheme.inter(size: 10.5, color: AppColors.subText),
+                            style: AppTheme.inter(size: 11.5, color: AppColors.subText),
                           ),
                         ],
                       ),
                     ),
                   ),
-                  GestureDetector(
-                    onTap: () => onDelete(items[i].id),
-                    child: const AppVectorIcon(
-                      AppIconType.moreDots,
-                      size: 19,
-                      color: Color(0xFFA8A8B7),
+                  BouncyTap(
+                    onTap: () => onMore(items[i]),
+                    pressedScale: 0.85,
+                    child: const Padding(
+                      padding: EdgeInsets.all(6),
+                      child: AppVectorIcon(
+                        AppIconType.moreDots,
+                        size: 19,
+                        color: Color(0xFF9092A4),
+                      ),
                     ),
                   ),
                 ],

@@ -21,9 +21,9 @@ class WhatItDoesScreen extends StatelessWidget {
         child: Column(
           children: [
             TopLineBar(
-              left: GestureDetector(
+              left: AppHeaderIconBtn(
+                icon: AppIconType.chevronLeft,
                 onTap: onBack,
-                child: const AppVectorIcon(AppIconType.chevronLeft, size: 21),
               ),
             ),
             Expanded(
@@ -57,24 +57,26 @@ class WhatItDoesScreen extends StatelessWidget {
                     StaggeredReveal(
                       index: 3,
                       child: PremiumCard(
-                        padding: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.all(14),
                         child: Column(
                           children: const [
                             _FeatureRow(
                               icon: AppIconType.mic,
-                              blue: true,
+                              tone: TileTone.indigo,
                               title: 'Capture naturally',
                               subtitle: 'Speak or type whatever is on your mind',
                             ),
-                            SizedBox(height: 9),
+                            SizedBox(height: 10),
                             _FeatureRow(
                               icon: AppIconType.bell,
+                              tone: TileTone.amber,
                               title: 'Remember what matters',
                               subtitle: 'Helpful, timely reminders',
                             ),
-                            SizedBox(height: 9),
+                            SizedBox(height: 10),
                             _FeatureRow(
                               icon: AppIconType.brain,
+                              tone: TileTone.violet,
                               title: 'Find it later',
                               subtitle: 'Keep important notes in one place',
                             ),
@@ -82,51 +84,73 @@ class WhatItDoesScreen extends StatelessWidget {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 6),
                     StaggeredReveal(
                       index: 4,
                       child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(19),
-                      decoration: BoxDecoration(
-                        color: AppColors.quoteLav,
-                        borderRadius: BorderRadius.circular(17),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '“Remind me to send the proposal tomorrow at 10.”',
-                            style: AppTheme.inter(
-                              size: 14,
-                              weight: FontWeight.w700,
-                              height: 1.55,
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          gradient: AppGradients.darkAiCard,
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: AppShadows.voiceFloat,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'VOICE EXAMPLE',
+                              style: AppTheme.inter(
+                                size: 9.5,
+                                weight: FontWeight.w800,
+                                color: const Color(0xFF9EA9FF),
+                                letterSpacing: 1.2,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 13),
-                          Row(
-                            children: [
-                              const AppVectorIcon(
-                                AppIconType.checkCircle,
-                                size: 17,
-                                color: Color(0xFF4AA687),
+                            const SizedBox(height: 8),
+                            Text(
+                              '“Remind me to send the proposal tomorrow at 10.”',
+                              style: AppTheme.inter(
+                                size: 15,
+                                weight: FontWeight.w700,
+                                color: Colors.white,
+                                height: 1.5,
                               ),
-                              const SizedBox(width: 7),
-                              Expanded(
-                                child: Text(
-                                  'Reminder ready to review',
-                                  style: AppTheme.inter(
-                                    size: 10.5,
-                                    weight: FontWeight.w700,
-                                    color: AppColors.greenText,
+                            ),
+                            const SizedBox(height: 14),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const AppVectorIcon(
+                                    AppIconType.checkCircle,
+                                    size: 15,
+                                    color: Color(0xFF6BE0B8),
                                   ),
-                                ),
+                                  const SizedBox(width: 6),
+                                  Flexible(
+                                    child: Text(
+                                      'Reminder ready to review',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: AppTheme.inter(
+                                        size: 11,
+                                        weight: FontWeight.w700,
+                                        color: const Color(0xFF8FF0CD),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                        ],
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
                     ),
                   ],
                 ),
@@ -151,13 +175,13 @@ class WhatItDoesScreen extends StatelessWidget {
 
 class _FeatureRow extends StatelessWidget {
   final AppIconType icon;
-  final bool blue;
+  final TileTone tone;
   final String title;
   final String subtitle;
 
   const _FeatureRow({
     required this.icon,
-    this.blue = false,
+    required this.tone,
     required this.title,
     required this.subtitle,
   });
@@ -165,35 +189,29 @@ class _FeatureRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
       decoration: BoxDecoration(
         color: AppColors.card,
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: const Color(0xFFEAE5E0)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x08282034),
-            blurRadius: 12,
-            offset: Offset(0, 6),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.cardBorder),
+        boxShadow: AppShadows.choose,
       ),
       child: Row(
         children: [
-          TileIconBox(icon: icon, blue: blue),
-          const SizedBox(width: 11),
+          TileIconBox(icon: icon, tone: tone, size: 42),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   title,
-                  style: AppTheme.inter(size: 12.3, weight: FontWeight.w700),
+                  style: AppTheme.inter(size: 14, weight: FontWeight.w700),
                 ),
                 const SizedBox(height: 3),
                 Text(
                   subtitle,
-                  style: AppTheme.inter(size: 10.5, color: AppColors.subText),
+                  style: AppTheme.inter(size: 11.5, color: AppColors.subText),
                 ),
               ],
             ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../app/app_state.dart';
 import '../../app/theme.dart';
+import '../../core/models/models.dart';
 import '../../core/widgets/app_animations.dart';
 import '../../core/widgets/app_icons.dart';
 import '../../core/widgets/warm_scaffold.dart';
@@ -29,14 +30,15 @@ class BrainDumpReviewScreen extends StatelessWidget {
         child: Column(
           children: [
             TopLineBar(
-              left: GestureDetector(
+              left: AppHeaderIconBtn(
+                icon: AppIconType.chevronLeft,
                 onTap: onBack,
-                child: const AppVectorIcon(AppIconType.chevronLeft, size: 21),
               ),
               title: 'Review your voice note',
-              right: GestureDetector(
+              right: AppHeaderIconBtn(
+                icon: AppIconType.editPen,
+                accent: true,
                 onTap: () => _showAddBrainDumpModal(context),
-                child: const AppVectorIcon(AppIconType.editPen, size: 20),
               ),
             ),
             Expanded(
@@ -76,10 +78,9 @@ class BrainDumpReviewScreen extends StatelessWidget {
                               for (int i = 0; i < taskItems.length; i++) ...[
                                 if (i > 0) const Divider(height: 1, color: AppColors.divider),
                                 _DraftCheckRow(
-                                  title: taskItems[i].title,
-                                  subtitle: taskItems[i].subtitle,
-                                  selected: taskItems[i].selected,
+                                  item: taskItems[i],
                                   onTap: () => appState.toggleBrainDumpItem(taskItems[i].id),
+                                  onMore: () => _editDraftItem(context, taskItems[i]),
                                 ),
                               ],
                             ],
@@ -101,10 +102,9 @@ class BrainDumpReviewScreen extends StatelessWidget {
                               for (int i = 0; i < reminderItems.length; i++) ...[
                                 if (i > 0) const Divider(height: 1, color: AppColors.divider),
                                 _DraftCheckRow(
-                                  title: reminderItems[i].title,
-                                  subtitle: reminderItems[i].subtitle,
-                                  selected: reminderItems[i].selected,
+                                  item: reminderItems[i],
                                   onTap: () => appState.toggleBrainDumpItem(reminderItems[i].id),
+                                  onMore: () => _editDraftItem(context, reminderItems[i]),
                                 ),
                               ],
                             ],
@@ -151,8 +151,9 @@ class BrainDumpReviewScreen extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      GestureDetector(
+                      BouncyTap(
                         onTap: () => _showAddBrainDumpModal(context),
+                        pressedScale: 0.96,
                         child: Container(
                           width: 112,
                           height: 47,
@@ -171,11 +172,17 @@ class BrainDumpReviewScreen extends StatelessWidget {
                       ),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: GestureDetector(
-                          onTap: () async {
-                            await appState.saveSelectedBrainDumpActions();
-                            onSaved();
-                          },
+                        child: BouncyTap(
+                          onTap: selectedCount == 0
+                              ? null
+                              : () async {
+                                  final saved = await appState.saveSelectedBrainDumpActions();
+                                  if (context.mounted) {
+                                    showAppToast(context, 'Saved $saved actions');
+                                  }
+                                  onSaved();
+                                },
+                          pressedScale: 0.97,
                           child: Container(
                             height: 47,
                             decoration: BoxDecoration(
@@ -221,30 +228,84 @@ class BrainDumpReviewScreen extends StatelessWidget {
     );
   }
 
+  void _editDraftItem(BuildContext context, BrainDumpDraftItem item) {
+    final titleCtrl = TextEditingController(text: item.title);
+    final subCtrl = TextEditingController(text: item.subtitle);
+    showPremiumSheet(
+      context: context,
+      builder: (sheetCtx) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Edit extracted action', style: AppTheme.inter(size: 19, weight: FontWeight.w800)),
+          const SizedBox(height: 14),
+          PremiumSheetField(
+            controller: titleCtrl,
+            label: 'Title',
+            hint: 'Action title',
+            autofocus: true,
+          ),
+          const SizedBox(height: 12),
+          PremiumSheetField(
+            controller: subCtrl,
+            label: 'Time / detail',
+            hint: 'Tomorrow at 5:00 PM',
+          ),
+          const SizedBox(height: 16),
+          PrimaryButton(
+            label: 'Update item',
+            onTap: () {
+              if (titleCtrl.text.trim().isNotEmpty) {
+                appState.updateBrainDumpItem(
+                  item.id,
+                  title: titleCtrl.text.trim(),
+                  subtitle: subCtrl.text.trim(),
+                );
+              }
+              Navigator.pop(sheetCtx);
+            },
+          ),
+          const SizedBox(height: 10),
+          PrimaryButton(
+            label: 'Remove item',
+            secondary: true,
+            trailingIcon: AppIconType.trash,
+            onTap: () {
+              appState.removeBrainDumpItem(item.id);
+              Navigator.pop(sheetCtx);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showAddBrainDumpModal(BuildContext context) {
     final ctrl = TextEditingController(
       text: appState.lastBrainDumpTranscript.isEmpty
           ? 'Prepare the project update tomorrow, email the meeting notes Friday, call Ali tomorrow at 5 PM, buy eggs, bread and detergent'
           : appState.lastBrainDumpTranscript,
     );
-    showDialog(
+    showPremiumSheet(
       context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: AppColors.card,
-        title: Text('Brain Dump Text', style: AppTheme.inter(size: 16, weight: FontWeight.w800)),
-        content: TextField(
-          controller: ctrl,
-          maxLines: 4,
-          decoration: const InputDecoration(hintText: 'Speak or type multiple things at once...'),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(context);
+      builder: (sheetCtx) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Brain dump transcript', style: AppTheme.inter(size: 19, weight: FontWeight.w800)),
+          const SizedBox(height: 14),
+          PremiumSheetField(
+            controller: ctrl,
+            label: 'Speak or edit everything on your mind',
+            hint: 'Multiple tasks, reminders, and shopping items...',
+            maxLines: 4,
+            autofocus: true,
+          ),
+          const SizedBox(height: 16),
+          PrimaryButton(
+            label: 'Re-organize thoughts',
+            onTap: () async {
+              Navigator.pop(sheetCtx);
               await appState.processVoiceBrainDump(ctrl.text);
             },
-            child: const Text('Re-organize'),
           ),
         ],
       ),
@@ -288,16 +349,14 @@ class _GroupHead extends StatelessWidget {
 }
 
 class _DraftCheckRow extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final bool selected;
+  final BrainDumpDraftItem item;
   final VoidCallback onTap;
+  final VoidCallback onMore;
 
   const _DraftCheckRow({
-    required this.title,
-    required this.subtitle,
-    required this.selected,
+    required this.item,
     required this.onTap,
+    required this.onMore,
   });
 
   @override
@@ -310,23 +369,30 @@ class _DraftCheckRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Row(
           children: [
-            SquareCheck(checked: selected, onTap: onTap),
+            SquareCheck(checked: item.selected, onTap: onTap),
             const SizedBox(width: 11),
             Expanded(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: AppTheme.inter(size: 11.8, weight: FontWeight.w700)),
+                  Text(item.title, style: AppTheme.inter(size: 11.8, weight: FontWeight.w700)),
                   const SizedBox(height: 3),
-                  Text(subtitle, style: AppTheme.inter(size: 10, color: AppColors.subText)),
+                  Text(item.subtitle, style: AppTheme.inter(size: 10, color: AppColors.subText)),
                 ],
               ),
             ),
-            const AppVectorIcon(
-              AppIconType.moreDots,
-              size: 18,
-              color: Color(0xFFA8A8B7),
+            BouncyTap(
+              onTap: onMore,
+              pressedScale: 0.85,
+              child: const Padding(
+                padding: EdgeInsets.all(6),
+                child: AppVectorIcon(
+                  AppIconType.moreDots,
+                  size: 18,
+                  color: Color(0xFFA8A8B7),
+                ),
+              ),
             ),
           ],
         ),

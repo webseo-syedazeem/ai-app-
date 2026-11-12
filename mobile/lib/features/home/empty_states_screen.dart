@@ -27,9 +27,9 @@ class EmptyStatesScreen extends StatelessWidget {
         child: Column(
           children: [
             TopLineBar(
-              left: GestureDetector(
+              left: AppHeaderIconBtn(
+                icon: AppIconType.chevronLeft,
                 onTap: onBack,
-                child: const AppVectorIcon(AppIconType.chevronLeft, size: 21),
               ),
               title: 'Today',
             ),
@@ -78,6 +78,7 @@ class EmptyStatesScreen extends StatelessWidget {
                         children: [
                           _EmptyActionRow(
                             icon: AppIconType.plus,
+                            tone: TileTone.indigo,
                             title: 'Create your first task',
                             subtitle: 'A small step toward a clearer day',
                             onTap: onCreateFirstTask,
@@ -85,6 +86,7 @@ class EmptyStatesScreen extends StatelessWidget {
                           const Divider(height: 1, color: AppColors.divider),
                           _EmptyActionRow(
                             icon: AppIconType.mic,
+                            tone: TileTone.amber,
                             title: 'Speak a reminder',
                             subtitle: 'Just say what you need',
                             onTap: onSpeakReminder,
@@ -133,12 +135,14 @@ class EmptyStatesScreen extends StatelessWidget {
 
 class _EmptyActionRow extends StatelessWidget {
   final AppIconType icon;
+  final TileTone tone;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
 
   const _EmptyActionRow({
     required this.icon,
+    this.tone = TileTone.neutral,
     required this.title,
     required this.subtitle,
     required this.onTap,
@@ -146,24 +150,24 @@ class _EmptyActionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return BouncyTap(
       onTap: onTap,
-      behavior: HitTestBehavior.opaque,
+      pressedScale: 0.985,
       child: Container(
-        constraints: const BoxConstraints(minHeight: 62),
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        constraints: const BoxConstraints(minHeight: 66),
+        padding: const EdgeInsets.symmetric(vertical: 9),
         child: Row(
           children: [
-            TileIconBox(icon: icon),
-            const SizedBox(width: 11),
+            TileIconBox(icon: icon, tone: tone),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: AppTheme.inter(size: 12.3, weight: FontWeight.w700)),
+                  Text(title, style: AppTheme.inter(size: 14, weight: FontWeight.w800)),
                   const SizedBox(height: 3),
-                  Text(subtitle, style: AppTheme.inter(size: 10.5, color: AppColors.subText)),
+                  Text(subtitle, style: AppTheme.inter(size: 11.5, color: AppColors.subText)),
                 ],
               ),
             ),

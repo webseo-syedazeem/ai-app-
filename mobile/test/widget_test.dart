@@ -45,6 +45,17 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Create account'), findsNWidgets(2));
 
+    // Inline validation on empty submit, then fill valid signup fields
+    await tester.tap(find.text('Create account').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Please enter your full name.'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField).at(0), 'Azeem');
+    await tester.enterText(find.byType(TextField).at(1), 'azeem@example.com');
+    await tester.enterText(find.byType(TextField).at(2), 'Secret123!');
+    await tester.pumpAndSettle();
+    expect(find.text('Strong password'), findsOneWidget);
+
     // Enter Set Your Goals
     await tester.tap(find.text('Create account').last);
     await tester.pumpAndSettle();
@@ -80,7 +91,7 @@ void main() {
     // Tasks Tab
     await tester.tap(find.text('Tasks'));
     await tester.pumpAndSettle();
-    expect(find.text('TODAY · NOV 10'), findsOneWidget);
+    expect(find.textContaining('TODAY ·'), findsOneWidget);
 
     // Speak (AI Chat) Tab
     await tester.tap(find.text('Speak'));
@@ -202,5 +213,85 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 500));
     expect(find.text('VOICE CAPTURE'), findsOneWidget);
+  });
+
+  testWidgets('Interactive sheets, edits, and Phase 2 actions work cleanly', (tester) async {
+    tester.view.physicalSize = const Size(390 * 2, 844 * 2);
+    tester.view.devicePixelRatio = 2.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final state = await _createTestState();
+
+    // Home -> What am I forgetting spotlight card is visible above the fold
+    await tester.pumpWidget(AiDailyHelperApp(appState: state, initialRoute: AppRoute.mainTabs));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('What am I forgetting?'));
+    await tester.pumpAndSettle();
+    expect(find.text('Listen aloud'), findsOneWidget);
+    // Dismiss bottom sheet by tapping the barrier above the sheet
+    await tester.tapAt(const Offset(20, 40));
+    await tester.pumpAndSettle();
+
+    // Settings -> Assistant tone sheet -> Professional
+    await tester.pumpWidget(
+      AiDailyHelperApp(appState: state, initialRoute: AppRoute.settings),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Assistant tone'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Professional'));
+    await tester.pumpAndSettle();
+    expect(state.user.preferredTone, 'professional');
+
+    // Goals -> Achievement history sheet -> Back to goals
+    await tester.pumpWidget(
+      AiDailyHelperApp(appState: state, initialRoute: AppRoute.goals),
+    );
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(SingleChildScrollView), const Offset(0, -200));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Achievement history'));
+    await tester.pumpAndSettle();
+    expect(find.text('Back to goals'), findsOneWidget);
+    await tester.tap(find.text('Back to goals'));
+    await tester.pumpAndSettle();
+
+    // Budgeting -> Monthly budget sheet & template action
+    await tester.pumpWidget(
+      AiDailyHelperApp(appState: state, initialRoute: AppRoute.budgeting),
+    );
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(SingleChildScrollView), const Offset(0, -220));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Use last month’s template'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Bills'), findsOneWidget);
+
+    // Settings -> Log out -> confirmation modal -> Welcome screen
+    await state.signInExisting();
+    await tester.pumpWidget(
+      AiDailyHelperApp(appState: state, initialRoute: AppRoute.settings),
+    );
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(SingleChildScrollView), const Offset(0, -350));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Log out'));
+    await tester.pumpAndSettle();
+    expect(find.text('Log out of account?'), findsOneWidget);
+    await tester.tap(find.text('Log out').last);
+    await tester.pumpAndSettle();
+    expect(state.user.onboardingCompleted, isFalse);
+    expect(find.text('Get started'), findsOneWidget);
+
+    // Welcome -> Sign in -> Login screen -> Main Home
+    await tester.tap(find.text('Sign in'));
+    await tester.pumpAndSettle();
+    expect(find.text('Forgot password?'), findsOneWidget);
+    await tester.enterText(find.byType(TextField).last, 'Secret123!');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sign in').last);
+    await tester.pumpAndSettle();
+    expect(state.user.onboardingCompleted, isTrue);
+    expect(find.text('Due today'), findsOneWidget);
   });
 }

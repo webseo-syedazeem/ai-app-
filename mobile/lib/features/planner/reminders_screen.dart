@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../app/app_state.dart';
 import '../../app/theme.dart';
 import '../../core/models/models.dart';
+import '../../core/widgets/app_animations.dart';
 import '../../core/widgets/app_icons.dart';
 import '../../core/widgets/warm_scaffold.dart';
 
@@ -50,14 +51,15 @@ class _RemindersScreenState extends State<RemindersScreen> {
         child: Column(
           children: [
             TopLineBar(
-              left: GestureDetector(
+              left: AppHeaderIconBtn(
+                icon: AppIconType.chevronLeft,
                 onTap: widget.onBack,
-                child: const AppVectorIcon(AppIconType.chevronLeft, size: 21),
               ),
               title: 'Reminders',
-              right: GestureDetector(
+              right: AppHeaderIconBtn(
+                icon: AppIconType.plus,
+                accent: true,
                 onTap: () => _showAddReminder(context),
-                child: const AppVectorIcon(AppIconType.plus, size: 21),
               ),
             ),
             Expanded(
@@ -71,14 +73,15 @@ class _RemindersScreenState extends State<RemindersScreen> {
                       emphasizedLine: 'a moment.',
                     ),
                     const SizedBox(height: 16),
-                    Row(
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
                       children: [
                         AppChip(
                           label: 'Upcoming',
                           active: !_showCompleted,
                           onTap: () => setState(() => _showCompleted = false),
                         ),
-                        const SizedBox(width: 8),
                         AppChip(
                           label: 'Completed',
                           active: _showCompleted,
@@ -87,21 +90,29 @@ class _RemindersScreenState extends State<RemindersScreen> {
                       ],
                     ),
                     if (tomorrow.isNotEmpty) ...[
-                      const SectionLabelRow(label: 'TOMORROW'),
-                      _ReminderCard(
-                        items: tomorrow,
-                        blueFirst: true,
-                        iconFor: _iconFor,
-                        onToggle: widget.appState.toggleReminder,
+                      const StaggeredReveal(index: 1, child: SectionLabelRow(label: 'TOMORROW')),
+                      StaggeredReveal(
+                        index: 2,
+                        child: _ReminderCard(
+                          items: tomorrow,
+                          blueFirst: true,
+                          iconFor: _iconFor,
+                          onToggle: widget.appState.toggleReminder,
+                          onMore: (rem) => _showReminderMenu(context, rem),
+                        ),
                       ),
                     ],
                     if (thisWeek.isNotEmpty) ...[
-                      const SectionLabelRow(label: 'THIS WEEK'),
-                      _ReminderCard(
-                        items: thisWeek,
-                        blueFirst: false,
-                        iconFor: _iconFor,
-                        onToggle: widget.appState.toggleReminder,
+                      const StaggeredReveal(index: 3, child: SectionLabelRow(label: 'THIS WEEK')),
+                      StaggeredReveal(
+                        index: 4,
+                        child: _ReminderCard(
+                          items: thisWeek,
+                          blueFirst: false,
+                          iconFor: _iconFor,
+                          onToggle: widget.appState.toggleReminder,
+                          onMore: (rem) => _showReminderMenu(context, rem),
+                        ),
                       ),
                     ],
                     if (filtered.isEmpty)
@@ -119,9 +130,14 @@ class _RemindersScreenState extends State<RemindersScreen> {
                       ),
                     const SectionLabelRow(label: 'NOTIFICATION SETTINGS'),
                     PremiumCard(
-                      onTap: () => widget.appState.updatePreferences(
-                        pushEnabled: !widget.appState.user.pushNotificationsEnabled,
-                      ),
+                      onTap: () {
+                        final next = !widget.appState.user.pushNotificationsEnabled;
+                        widget.appState.updatePreferences(pushEnabled: next);
+                        showAppToast(
+                          context,
+                          next ? 'Push notifications enabled' : 'Push notifications paused',
+                        );
+                      },
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                       child: Container(
                         constraints: const BoxConstraints(minHeight: 58),
@@ -158,10 +174,11 @@ class _RemindersScreenState extends State<RemindersScreen> {
                         ),
                       ),
                     ),
-                    const MiniBanner(
+                    MiniBanner(
                       icon: AppIconType.clock,
                       iconColor: AppColors.indigo,
-                      text: 'Reminder times use your selected timezone.',
+                      text:
+                          'Reminder times use your selected timezone (${widget.appState.user.timezone}).',
                     ),
                   ],
                 ),
@@ -173,30 +190,141 @@ class _RemindersScreenState extends State<RemindersScreen> {
     );
   }
 
-  void _showAddReminder(BuildContext context) {
-    final ctrl = TextEditingController();
-    showDialog(
+  void _showReminderMenu(BuildContext context, ReminderModel rem) {
+    showPremiumSheet(
       context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: AppColors.card,
-        title: Text('New reminder', style: AppTheme.inter(size: 16, weight: FontWeight.w800)),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'e.g. Call Ali at 5 PM'),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () {
-              if (ctrl.text.trim().isNotEmpty) {
-                widget.appState.addReminder(ctrl.text.trim());
-              }
-              Navigator.pop(context);
+      builder: (sheetCtx) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const EyebrowText('REMINDER OPTIONS'),
+          const SizedBox(height: 6),
+          Text(rem.title, style: AppTheme.inter(size: 18, weight: FontWeight.w800)),
+          const SizedBox(height: 14),
+          SheetActionRow(
+            icon: AppIconType.checkCircle,
+            title: rem.completed ? 'Mark as upcoming' : 'Mark as completed',
+            onTap: () {
+              widget.appState.toggleReminder(rem.id);
+              Navigator.pop(sheetCtx);
             },
-            child: const Text('Save'),
+          ),
+          SheetActionRow(
+            icon: AppIconType.editPen,
+            title: 'Edit reminder',
+            onTap: () {
+              Navigator.pop(sheetCtx);
+              _showEditReminder(context, rem);
+            },
+          ),
+          SheetActionRow(
+            icon: AppIconType.trash,
+            title: 'Delete reminder',
+            color: const Color(0xFFC24656),
+            onTap: () {
+              widget.appState.deleteReminder(rem.id);
+              Navigator.pop(sheetCtx);
+              showAppToast(context, 'Deleted "${rem.title}"');
+            },
           ),
         ],
+      ),
+    );
+  }
+
+  void _showEditReminder(BuildContext context, ReminderModel rem) {
+    final titleCtrl = TextEditingController(text: rem.title);
+    final timeCtrl = TextEditingController(text: rem.displayTime);
+    showPremiumSheet(
+      context: context,
+      builder: (sheetCtx) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Edit reminder', style: AppTheme.inter(size: 20, weight: FontWeight.w800)),
+          const SizedBox(height: 14),
+          PremiumSheetField(
+            controller: titleCtrl,
+            label: 'Reminder',
+            hint: 'Call Ali',
+            autofocus: true,
+          ),
+          const SizedBox(height: 12),
+          PremiumSheetField(
+            controller: timeCtrl,
+            label: 'When',
+            hint: 'Tomorrow · 5:00 PM',
+          ),
+          const SizedBox(height: 18),
+          PrimaryButton(
+            label: 'Save changes',
+            onTap: () {
+              if (titleCtrl.text.trim().isNotEmpty) {
+                widget.appState.editReminder(
+                  rem.id,
+                  title: titleCtrl.text.trim(),
+                  displayTime: timeCtrl.text.trim(),
+                );
+              }
+              Navigator.pop(sheetCtx);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAddReminder(BuildContext context) {
+    final ctrl = TextEditingController();
+    String selectedTime = 'Tomorrow · 5:00 PM';
+    showPremiumSheet(
+      context: context,
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (ctx, setModalState) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('New reminder', style: AppTheme.inter(size: 20, weight: FontWeight.w800)),
+            const SizedBox(height: 14),
+            PremiumSheetField(
+              controller: ctrl,
+              label: 'What should I remind you about?',
+              hint: 'e.g. Call Ali',
+              autofocus: true,
+            ),
+            const SizedBox(height: 14),
+            Text('When', style: AppTheme.inter(size: 11, weight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final t in const [
+                  'Today · 6:00 PM',
+                  'Tomorrow · 5:00 PM',
+                  'Friday · 11:00 AM',
+                ])
+                  AppChip(
+                    label: t,
+                    active: selectedTime == t,
+                    onTap: () => setModalState(() => selectedTime = t),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            PrimaryButton(
+              label: 'Save reminder',
+              trailingIcon: AppIconType.plus,
+              onTap: () {
+                if (ctrl.text.trim().isNotEmpty) {
+                  widget.appState.addReminder(
+                    ctrl.text.trim(),
+                    displayTime: selectedTime,
+                  );
+                  Navigator.pop(ctx);
+                  showAppToast(context, 'Reminder scheduled for $selectedTime');
+                }
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -207,18 +335,26 @@ class _ReminderCard extends StatelessWidget {
   final bool blueFirst;
   final AppIconType Function(String) iconFor;
   final ValueChanged<String> onToggle;
+  final ValueChanged<ReminderModel> onMore;
 
   const _ReminderCard({
     required this.items,
     required this.blueFirst,
     required this.iconFor,
     required this.onToggle,
+    required this.onMore,
   });
+
+  TileTone _toneFor(String kind, int index) {
+    if (kind == 'calendar') return TileTone.amber;
+    if (kind == 'briefcase') return TileTone.violet;
+    return (blueFirst && index == 0) ? TileTone.indigo : TileTone.amber;
+  }
 
   @override
   Widget build(BuildContext context) {
     return PremiumCard(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 6),
       child: Column(
         children: [
           for (int i = 0; i < items.length; i++) ...[
@@ -227,40 +363,49 @@ class _ReminderCard extends StatelessWidget {
               onTap: () => onToggle(items[i].id),
               behavior: HitTestBehavior.opaque,
               child: Container(
-                constraints: const BoxConstraints(minHeight: 62),
-                padding: const EdgeInsets.symmetric(vertical: 8),
+                constraints: const BoxConstraints(minHeight: 66),
+                padding: const EdgeInsets.symmetric(vertical: 9),
                 child: Row(
                   children: [
                     TileIconBox(
                       icon: iconFor(items[i].iconKind),
-                      blue: blueFirst && i == 0,
+                      tone: _toneFor(items[i].iconKind, i),
                     ),
-                    const SizedBox(width: 11),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            items[i].title,
+                          AnimatedDefaultTextStyle(
+                            duration: const Duration(milliseconds: 180),
                             style: AppTheme.inter(
-                              size: 12.3,
+                              size: 14,
                               weight: FontWeight.w700,
+                              color: items[i].completed ? const Color(0xFFA0A0AE) : AppColors.navy,
                               decoration: items[i].completed ? TextDecoration.lineThrough : null,
                             ),
+                            child: Text(items[i].title),
                           ),
                           const SizedBox(height: 3),
                           Text(
                             items[i].displayTime,
-                            style: AppTheme.inter(size: 10.5, color: AppColors.subText),
+                            style: AppTheme.inter(size: 11.5, color: AppColors.subText),
                           ),
                         ],
                       ),
                     ),
-                    const AppVectorIcon(
-                      AppIconType.moreDots,
-                      size: 18,
-                      color: Color(0xFF74788C),
+                    BouncyTap(
+                      onTap: () => onMore(items[i]),
+                      pressedScale: 0.85,
+                      child: const Padding(
+                        padding: EdgeInsets.all(6),
+                        child: AppVectorIcon(
+                          AppIconType.moreDots,
+                          size: 18,
+                          color: Color(0xFF74788C),
+                        ),
+                      ),
                     ),
                   ],
                 ),

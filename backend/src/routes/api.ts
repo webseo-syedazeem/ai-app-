@@ -4,12 +4,30 @@ import crypto from 'node:crypto';
 import { dataStore, DEFAULT_USER_ID } from '../db/dataStore.js';
 import { runAssistantChat, runBrainDumpExtraction } from '../ai/geminiClient.js';
 import { buildForgettingReport, executeToolCall, resolveRelativeDateTime } from '../ai/toolExecutor.js';
+import {
+  hashPassword,
+  sanitizeUser,
+  signAuthToken,
+  verifyAuthToken,
+  verifyPassword,
+} from '../services/authService.js';
 import { checkAndConsumeQuota, PLAN_CONFIG } from '../services/usageService.js';
 import { hasGeminiConfig } from '../config/env.js';
 
 export const apiRouter = Router();
 
+function extractBearerToken(req: Request): string | null {
+  const auth = req.header('authorization')?.trim();
+  if (!auth || !auth.toLowerCase().startsWith('bearer ')) return null;
+  return auth.slice(7).trim() || null;
+}
+
 function getUserId(req: Request): string {
+  const token = extractBearerToken(req);
+  if (token) {
+    const payload = verifyAuthToken(token);
+    if (payload?.sub) return payload.sub;
+  }
   const header = req.header('x-user-id')?.trim();
   return header || DEFAULT_USER_ID;
 }
@@ -24,11 +42,109 @@ apiRouter.get('/health', (_req: Request, res: Response) => {
   });
 });
 
+// ---------------- AUTH ----------------
+apiRouter.post('/auth/signup', async (req: Request, res: Response) => {
+  const schema = z.object({
+    full_name: z.string().trim().min(1, 'Full name is required'),
+    email: z.string().trim().email('Valid email address is required'),
+    password: z.string().min(6, 'Password must be at least 6 characters'),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid input' });
+    return;
+  }
+
+  const normalizedEmail = parsed.data.email.toLowerCase();
+  const existing = await dataStore.findUserByEmail(normalizedEmail);
+  if (existing) {
+    res.status(409).json({ error: 'An account with this email already exists. Please log in.' });
+    return;
+  }
+
+  const user = await dataStore.createAuthUser({
+    fullName: parsed.data.full_name,
+    email: normalizedEmail,
+    passwordHash: hashPassword(parsed.data.password),
+  });
+  const token = signAuthToken(user);
+
+  res.status(201).json({
+    token,
+    user: sanitizeUser(user),
+    planLimits: PLAN_CONFIG[user.plan],
+    allPlans: PLAN_CONFIG,
+  });
+});
+
+apiRouter.post('/auth/login', async (req: Request, res: Response) => {
+  const schema = z.object({
+    email: z.string().trim().email('Valid email address is required'),
+    password: z.string().min(1, 'Password is required'),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid credentials' });
+    return;
+  }
+
+  const normalizedEmail = parsed.data.email.toLowerCase();
+  const user = await dataStore.findUserByEmail(normalizedEmail);
+  if (!user || !verifyPassword(parsed.data.password, user.password_hash)) {
+    res.status(401).json({ error: 'Invalid email or password.' });
+    return;
+  }
+
+  const token = signAuthToken(user);
+  res.json({
+    token,
+    user: sanitizeUser(user),
+    planLimits: PLAN_CONFIG[user.plan],
+    allPlans: PLAN_CONFIG,
+  });
+});
+
+apiRouter.post('/auth/forgot-password', async (req: Request, res: Response) => {
+  const schema = z.object({
+    email: z.string().trim().email('Valid email address is required'),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message || 'Valid email is required' });
+    return;
+  }
+
+  await dataStore.findUserByEmail(parsed.data.email.toLowerCase());
+  res.json({
+    ok: true,
+    message: `If an account exists for ${parsed.data.email.toLowerCase()}, recovery instructions have been queued.`,
+  });
+});
+
+apiRouter.get('/auth/me', async (req: Request, res: Response) => {
+  const token = extractBearerToken(req);
+  const payload = token ? verifyAuthToken(token) : null;
+  if (!payload) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+  const user = await dataStore.findUserById(payload.sub);
+  if (!user) {
+    res.status(401).json({ error: 'Session expired. Please log in again.' });
+    return;
+  }
+  res.json({
+    user: sanitizeUser(user),
+    planLimits: PLAN_CONFIG[user.plan],
+    allPlans: PLAN_CONFIG,
+  });
+});
+
 // ---------------- USER & PRIVACY ----------------
 apiRouter.get('/user', async (req: Request, res: Response) => {
   const userId = getUserId(req);
   const user = await dataStore.ensureUser(userId);
-  res.json({ user, planLimits: PLAN_CONFIG[user.plan], allPlans: PLAN_CONFIG });
+  res.json({ user: sanitizeUser(user), planLimits: PLAN_CONFIG[user.plan], allPlans: PLAN_CONFIG });
 });
 
 apiRouter.patch('/user', async (req: Request, res: Response) => {
@@ -49,12 +165,22 @@ apiRouter.patch('/user', async (req: Request, res: Response) => {
     res.status(400).json({ error: parsed.error.flatten() });
     return;
   }
+  if (parsed.data.email) {
+    const existing = await dataStore.findUserByEmail(parsed.data.email);
+    if (existing && existing.id !== userId) {
+      res.status(409).json({ error: 'Email is already in use by another account.' });
+      return;
+    }
+  }
   const updated = await dataStore.updateUser(userId, parsed.data);
-  res.json({ user: updated });
+  res.json({ user: sanitizeUser(updated) });
 });
 
 apiRouter.get('/user/export', async (req: Request, res: Response) => {
   const data = await dataStore.exportUserData(getUserId(req));
+  if (data.profile && typeof data.profile === 'object') {
+    data.profile = sanitizeUser(data.profile as Parameters<typeof sanitizeUser>[0]);
+  }
   res.json(data);
 });
 
@@ -85,7 +211,7 @@ apiRouter.get('/dashboard', async (req: Request, res: Response) => {
   const forgetting = buildForgettingReport({ tasks, reminders, shopping, memories });
 
   res.json({
-    user,
+    user: sanitizeUser(user),
     counts: {
       dueToday: pendingTasks.length,
       upcomingReminders: upcomingReminders.length,
@@ -410,7 +536,7 @@ apiRouter.post('/ai/chat', async (req: Request, res: Response) => {
     executedTools: aiResult.executedTools,
     modelUsed: aiResult.modelUsed,
     tier: aiResult.tier,
-    user: quota.user,
+    user: sanitizeUser(quota.user),
   });
 });
 
@@ -637,3 +763,13 @@ apiRouter.patch('/phase2/email-reports', async (req: Request, res: Response) => 
   const prefs = await dataStore.updateEmailReportPrefs(getUserId(req), req.body || {});
   res.json({ prefs });
 });
+
+for (const layer of apiRouter.stack) {
+  if (!layer.route) continue;
+  for (const routeLayer of layer.route.stack) {
+    const originalHandle = routeLayer.handle;
+    routeLayer.handle = (req, res, next) => {
+      Promise.resolve(originalHandle(req, res, next)).catch(next);
+    };
+  }
+}

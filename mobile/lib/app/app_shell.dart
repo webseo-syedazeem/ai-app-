@@ -27,6 +27,7 @@ enum AppRoute {
   welcome,
   whatItDoes,
   createAccount,
+  signIn,
   setGoals,
   personalize,
   mainTabs,
@@ -149,7 +150,7 @@ class _AppShellState extends State<AppShell> {
           case AppRoute.welcome:
             return WelcomeScreen(
               onGetStarted: () => _go(AppRoute.whatItDoes),
-              onSignIn: () => _go(AppRoute.mainTabs),
+              onSignIn: () => _go(AppRoute.signIn),
             );
           case AppRoute.whatItDoes:
             return WhatItDoesScreen(
@@ -157,17 +158,18 @@ class _AppShellState extends State<AppShell> {
               onContinue: () => _go(AppRoute.createAccount),
             );
           case AppRoute.createAccount:
-            return CreateAccountScreen(
+            return _buildAuthScreen(
+              signInMode: false,
               initialName: '',
               initialEmail: '',
               onBack: () => _go(AppRoute.whatItDoes),
-              onCreate: (name, email) async {
-                await widget.appState.updateOnboardingAccount(
-                  fullName: name,
-                  email: email,
-                );
-                _go(AppRoute.setGoals);
-              },
+            );
+          case AppRoute.signIn:
+            return _buildAuthScreen(
+              signInMode: true,
+              initialName: widget.appState.user.fullName,
+              initialEmail: widget.appState.user.email,
+              onBack: () => _go(AppRoute.welcome),
             );
           case AppRoute.setGoals:
             return SetYourGoalsScreen(
@@ -224,6 +226,11 @@ class _AppShellState extends State<AppShell> {
               appState: widget.appState,
               onBack: () => _go(AppRoute.mainTabs),
               onSwitchTab: _switchTab,
+              onLogOut: () async {
+                await widget.appState.logOut();
+                _tabIndex = 0;
+                _go(AppRoute.welcome);
+              },
             );
           case AppRoute.budgeting:
             return BudgetingScreen(
@@ -245,6 +252,42 @@ class _AppShellState extends State<AppShell> {
           case AppRoute.mainTabs:
             return _buildTab(_tabIndex);
         }
+  }
+
+  Widget _buildAuthScreen({
+    required bool signInMode,
+    required String initialName,
+    required String initialEmail,
+    required VoidCallback onBack,
+  }) {
+    return CreateAccountScreen(
+      initialName: initialName,
+      initialEmail: initialEmail,
+      initialSignInMode: signInMode,
+      onBack: onBack,
+      onCreate: (name, email, password) async {
+        final err = await widget.appState.updateOnboardingAccount(
+          fullName: name,
+          email: email,
+          password: password,
+        );
+        if (err == null) {
+          _go(AppRoute.setGoals);
+        }
+        return err;
+      },
+      onSignIn: (email, password) async {
+        final err = await widget.appState.signInExisting(
+          email: email,
+          password: password,
+        );
+        if (err == null) {
+          _switchTab(0);
+        }
+        return err;
+      },
+      onForgotPassword: (email) => widget.appState.requestPasswordReset(email),
+    );
   }
 
   Widget _buildTab(int index) {

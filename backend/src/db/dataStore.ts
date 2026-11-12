@@ -526,11 +526,91 @@ function stripMongoId<T>(doc: T): T {
   return copy as T;
 }
 
+function buildUserProfile(params: {
+  id: string;
+  email: string;
+  fullName?: string;
+  passwordHash?: string;
+  plan?: UserProfile['plan'];
+}): UserProfile {
+  const now = nowIso();
+  const plan = params.plan ?? 'free';
+  return {
+    id: params.id,
+    email: params.email.trim().toLowerCase(),
+    full_name: params.fullName?.trim() || 'Azeem',
+    ...(params.passwordHash ? { password_hash: params.passwordHash } : {}),
+    plan,
+    ai_credits: plan === 'plus' ? 1000 : plan === 'pro' ? 3000 : 5,
+    daily_actions_used: 0,
+    daily_actions_date: todayDateKey(),
+    monthly_actions_used: 0,
+    voice_seconds_used: 0,
+    usage_month: monthKey(),
+    preferred_tone: 'friendly',
+    focus_areas: ['work', 'shopping', 'personal'],
+    helper_context: '',
+    timezone: 'Asia/Karachi',
+    push_notifications_enabled: true,
+    onboarding_completed: false,
+    created_at: now,
+    updated_at: now,
+  };
+}
+
 export class DataStore {
   private local = new LocalStore();
 
   isUsingMongo(): boolean {
     return hasMongoConfig();
+  }
+
+  async findUserById(userId: string): Promise<UserProfile | null> {
+    const db = await getMongoDb();
+    if (db) {
+      const existing = await db.collection<UserProfile>('users').findOne({ id: userId });
+      return existing ? stripMongoId(existing) : null;
+    }
+    return this.local.read().users[userId] || null;
+  }
+
+  async findUserByEmail(email: string): Promise<UserProfile | null> {
+    const normalized = email.trim().toLowerCase();
+    if (!normalized) return null;
+    const db = await getMongoDb();
+    if (db) {
+      const existing = await db.collection<UserProfile>('users').findOne({ email: normalized });
+      if (existing) return stripMongoId(existing);
+      const caseInsensitive = await db
+        .collection<UserProfile>('users')
+        .findOne({ email: { $regex: `^${normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } });
+      return caseInsensitive ? stripMongoId(caseInsensitive) : null;
+    }
+    const users = Object.values(this.local.read().users);
+    return users.find((u) => u.email.trim().toLowerCase() === normalized) || null;
+  }
+
+  async createAuthUser(params: {
+    fullName: string;
+    email: string;
+    passwordHash: string;
+  }): Promise<UserProfile> {
+    const fresh = buildUserProfile({
+      id: crypto.randomUUID(),
+      email: params.email,
+      fullName: params.fullName,
+      passwordHash: params.passwordHash,
+      plan: 'free',
+    });
+    const db = await getMongoDb();
+    if (db) {
+      await db.collection<UserProfile>('users').insertOne({ ...fresh });
+      return fresh;
+    }
+    const snap = this.local.read();
+    snap.users[fresh.id] = fresh;
+    this.local.save();
+    return fresh;
   }
 
   async ensureUser(userId: string): Promise<UserProfile> {
@@ -539,54 +619,20 @@ export class DataStore {
       const existing = await db.collection<UserProfile>('users').findOne({ id: userId });
       if (existing) return stripMongoId(existing);
 
-      const now = nowIso();
-      const fresh: UserProfile = {
+      const fresh = buildUserProfile({
         id: userId,
-        email: `${userId.slice(0, 8)}@example.com`,
-        full_name: 'Azeem',
-        plan: 'free',
-        ai_credits: 5,
-        daily_actions_used: 0,
-        daily_actions_date: todayDateKey(),
-        monthly_actions_used: 0,
-        voice_seconds_used: 0,
-        usage_month: monthKey(),
-        preferred_tone: 'friendly',
-        focus_areas: ['work', 'shopping', 'personal'],
-        helper_context: '',
-        timezone: 'Asia/Karachi',
-        push_notifications_enabled: true,
-        onboarding_completed: false,
-        created_at: now,
-        updated_at: now,
-      };
+        email: userId === DEFAULT_USER_ID ? 'azeem@example.com' : `${userId}@example.com`,
+      });
       await db.collection<UserProfile>('users').insertOne({ ...fresh });
       return fresh;
     }
 
     const snap = this.local.read();
     if (!snap.users[userId]) {
-      const now = nowIso();
-      snap.users[userId] = {
+      snap.users[userId] = buildUserProfile({
         id: userId,
-        email: 'user@example.com',
-        full_name: 'Azeem',
-        plan: 'free',
-        ai_credits: 5,
-        daily_actions_used: 0,
-        daily_actions_date: todayDateKey(),
-        monthly_actions_used: 0,
-        voice_seconds_used: 0,
-        usage_month: monthKey(),
-        preferred_tone: 'friendly',
-        focus_areas: ['work', 'shopping', 'personal'],
-        helper_context: '',
-        timezone: 'Asia/Karachi',
-        push_notifications_enabled: true,
-        onboarding_completed: false,
-        created_at: now,
-        updated_at: now,
-      };
+        email: userId === DEFAULT_USER_ID ? 'azeem@example.com' : `${userId}@example.com`,
+      });
       this.local.save();
     }
     return snap.users[userId];
@@ -594,16 +640,20 @@ export class DataStore {
 
   async updateUser(userId: string, patch: Partial<UserProfile>): Promise<UserProfile> {
     const current = await this.ensureUser(userId);
+    const normalizedPatch: Partial<UserProfile> = { ...patch };
+    if (typeof normalizedPatch.email === 'string') {
+      normalizedPatch.email = normalizedPatch.email.trim().toLowerCase();
+    }
     const updated: UserProfile = {
       ...current,
-      ...patch,
+      ...normalizedPatch,
       updated_at: nowIso(),
     };
     const db = await getMongoDb();
     if (db) {
       await db
         .collection<UserProfile>('users')
-        .updateOne({ id: userId }, { $set: { ...patch, updated_at: updated.updated_at } });
+        .updateOne({ id: userId }, { $set: { ...normalizedPatch, updated_at: updated.updated_at } });
       return updated;
     }
     this.local.read().users[userId] = updated;

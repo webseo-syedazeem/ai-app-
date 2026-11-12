@@ -24,6 +24,9 @@ class AppState extends ChangeNotifier {
 
   bool initialized = false;
   bool backendConnected = false;
+  bool isAiThinking = false;
+  String? authToken;
+  String affirmationReminderLabel = 'No reminder scheduled';
 
   late UserProfileModel user;
   List<TaskModel> tasks = [];
@@ -48,6 +51,7 @@ class AppState extends ChangeNotifier {
   Future<void> setBackendUrl(String url) async {
     _api.baseUrl = url.trim().replaceAll(RegExp(r'/+$'), '');
     backendConnected = await _api.checkHealth();
+    await _persist();
     notifyListeners();
   }
 
@@ -78,6 +82,17 @@ class AppState extends ChangeNotifier {
 
     if (checkRemote) {
       backendConnected = await _api.checkHealth();
+      if (backendConnected && authToken != null && authToken!.isNotEmpty) {
+        final me = await _api.get('/auth/me');
+        if (me != null && me['user'] is Map) {
+          user = UserProfileModel.fromJson(
+            Map<String, dynamic>.from(me['user'] as Map),
+          );
+          _api.userId = user.id;
+          await _syncWorkspaceFromBackend();
+          await _persist();
+        }
+      }
       notifyListeners();
     }
   }
@@ -375,6 +390,15 @@ class AppState extends ChangeNotifier {
     emailReportsEnabled = snap['email_reports_enabled'] as bool? ?? false;
     weeklyEmailSummary = snap['weekly_email_summary'] as bool? ?? true;
     monthlyEmailReview = snap['monthly_email_review'] as bool? ?? true;
+    affirmationReminderLabel =
+        snap['affirmation_reminder_label']?.toString() ?? 'No reminder scheduled';
+    authToken = snap['auth_token']?.toString();
+    _api.authToken = authToken;
+    _api.userId = user.id;
+    final savedUrl = snap['backend_url']?.toString().trim();
+    if (savedUrl != null && savedUrl.isNotEmpty) {
+      _api.baseUrl = savedUrl;
+    }
 
     if (brainDumpDrafts.isEmpty) {
       brainDumpDrafts = const [
@@ -434,21 +458,92 @@ class AppState extends ChangeNotifier {
       'email_reports_enabled': emailReportsEnabled,
       'weekly_email_summary': weeklyEmailSummary,
       'monthly_email_review': monthlyEmailReview,
+      'affirmation_reminder_label': affirmationReminderLabel,
+      'auth_token': authToken,
+      'backend_url': _api.baseUrl,
     });
   }
 
+  Future<void> _syncWorkspaceFromBackend() async {
+    if (!backendConnected) return;
+    final results = await Future.wait([
+      _api.get('/tasks'),
+      _api.get('/reminders'),
+      _api.get('/shopping'),
+      _api.get('/memories'),
+    ]);
+
+    final remoteTasks = results[0]?['tasks'];
+    if (remoteTasks is List && remoteTasks.isNotEmpty) {
+      tasks = remoteTasks
+          .map((e) => TaskModel.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+    }
+    final remoteReminders = results[1]?['reminders'];
+    if (remoteReminders is List && remoteReminders.isNotEmpty) {
+      reminders = remoteReminders
+          .map((e) => ReminderModel.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+    }
+    final remoteShopping = results[2]?['items'];
+    if (remoteShopping is List && remoteShopping.isNotEmpty) {
+      shoppingItems = remoteShopping
+          .map((e) => ShoppingItemModel.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+    }
+    final remoteMemories = results[3]?['memories'];
+    if (remoteMemories is List && remoteMemories.isNotEmpty) {
+      memories = remoteMemories
+          .map((e) => MemoryModel.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+    }
+  }
+
   // ---------------- ACCOUNT & ONBOARDING ----------------
-  Future<void> updateOnboardingAccount({
+  Future<String?> updateOnboardingAccount({
     required String fullName,
     required String email,
+    String? password,
   }) async {
+    final cleanName = fullName.trim().isEmpty ? 'Azeem' : fullName.trim();
+    final cleanEmail = email.trim().isEmpty ? user.email : email.trim().toLowerCase();
+
+    if (password != null && password.isNotEmpty) {
+      if (!backendConnected) {
+        backendConnected = await _api.checkHealth();
+      }
+      if (backendConnected) {
+        final res = await _api.postResult('/auth/signup', {
+          'full_name': cleanName,
+          'email': cleanEmail,
+          'password': password,
+        });
+        if (!res.ok) {
+          return res.error ?? 'Could not create account. Please try again.';
+        }
+        final data = res.data ?? const {};
+        authToken = data['token']?.toString();
+        _api.authToken = authToken;
+        if (data['user'] is Map) {
+          user = UserProfileModel.fromJson(
+            Map<String, dynamic>.from(data['user'] as Map),
+          );
+          _api.userId = user.id;
+        }
+        await _persist();
+        notifyListeners();
+        return null;
+      }
+    }
+
     user = user.copyWith(
-      fullName: fullName.trim().isEmpty ? 'Azeem' : fullName.trim(),
-      email: email.trim().isEmpty ? user.email : email.trim(),
+      fullName: cleanName,
+      email: cleanEmail,
     );
     await _persist();
     notifyListeners();
     _api.patch('/user', {'full_name': user.fullName, 'email': user.email});
+    return null;
   }
 
   void toggleFocusArea(String area) {
@@ -507,6 +602,78 @@ class AppState extends ChangeNotifier {
     });
   }
 
+  Future<String?> signInExisting({String? email, String? password}) async {
+    final cleanEmail = email?.trim().toLowerCase();
+    if (cleanEmail != null &&
+        cleanEmail.isNotEmpty &&
+        password != null &&
+        password.isNotEmpty) {
+      if (!backendConnected) {
+        backendConnected = await _api.checkHealth();
+      }
+      if (backendConnected) {
+        final res = await _api.postResult('/auth/login', {
+          'email': cleanEmail,
+          'password': password,
+        });
+        if (!res.ok) {
+          return res.error ?? 'Invalid email or password.';
+        }
+        final data = res.data ?? const {};
+        authToken = data['token']?.toString();
+        _api.authToken = authToken;
+        if (data['user'] is Map) {
+          user = UserProfileModel.fromJson(
+            Map<String, dynamic>.from(data['user'] as Map),
+          ).copyWith(onboardingCompleted: true);
+          _api.userId = user.id;
+        }
+        await _syncWorkspaceFromBackend();
+        await _persist();
+        notifyListeners();
+        return null;
+      }
+    }
+
+    final derivedName = (cleanEmail != null && cleanEmail.contains('@'))
+        ? cleanEmail.split('@').first
+        : null;
+    user = user.copyWith(
+      email: (cleanEmail != null && cleanEmail.isNotEmpty) ? cleanEmail : user.email,
+      fullName: (user.fullName.isEmpty && derivedName != null && derivedName.isNotEmpty)
+          ? derivedName[0].toUpperCase() + derivedName.substring(1)
+          : user.fullName,
+      onboardingCompleted: true,
+    );
+    await _persist();
+    notifyListeners();
+    return null;
+  }
+
+  Future<String?> requestPasswordReset(String email) async {
+    if (!backendConnected) {
+      backendConnected = await _api.checkHealth();
+    }
+    if (!backendConnected) {
+      return 'Recovery link queued locally for ${email.trim()}';
+    }
+    final res = await _api.postResult('/auth/forgot-password', {
+      'email': email.trim(),
+    });
+    if (!res.ok) {
+      return res.error ?? 'Could not process recovery request.';
+    }
+    return res.data?['message']?.toString() ?? 'Recovery link sent to ${email.trim()}';
+  }
+
+  Future<void> logOut() async {
+    authToken = null;
+    _api.authToken = null;
+    user = user.copyWith(onboardingCompleted: false);
+    await _persist();
+    notifyListeners();
+  }
+
   // ---------------- TASKS ----------------
   Future<void> toggleTask(String id) async {
     tasks = tasks
@@ -538,6 +705,33 @@ class AppState extends ChangeNotifier {
     await _persist();
     notifyListeners();
     _api.delete('/tasks/$id');
+  }
+
+  Future<void> editTask(
+    String id, {
+    String? title,
+    String? subtitle,
+    String? section,
+    String? priority,
+  }) async {
+    tasks = tasks.map((t) {
+      if (t.id != id) return t;
+      return TaskModel(
+        id: t.id,
+        title: title?.trim().isNotEmpty == true ? title!.trim() : t.title,
+        subtitle: subtitle ?? t.subtitle,
+        dueAt: t.dueAt,
+        priority: priority ?? t.priority,
+        completed: t.completed,
+        section: section ?? t.section,
+      );
+    }).toList();
+    await _persist();
+    notifyListeners();
+    _api.patch('/tasks/$id', {
+      'title': ?title,
+      'priority': ?priority,
+    });
   }
 
   Future<int> moveTodayUnfinishedToTomorrow() async {
@@ -598,6 +792,15 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> editReminder(String id, {required String title, required String displayTime}) async {
+    reminders = reminders.map((r) {
+      if (r.id != id) return r;
+      return r.copyWith(title: title.trim(), displayTime: displayTime.trim());
+    }).toList();
+    await _persist();
+    notifyListeners();
+  }
+
   // ---------------- SHOPPING ----------------
   Future<void> toggleShopping(String id) async {
     shoppingItems = shoppingItems
@@ -621,6 +824,20 @@ class AppState extends ChangeNotifier {
 
   Future<void> deleteShoppingItem(String id) async {
     shoppingItems = shoppingItems.where((s) => s.id != id).toList();
+    await _persist();
+    notifyListeners();
+  }
+
+  Future<void> editShoppingItem(String id, {required String item, required String category}) async {
+    shoppingItems = shoppingItems
+        .map((s) => s.id == id ? s.copyWith(item: item.trim(), category: category) : s)
+        .toList();
+    await _persist();
+    notifyListeners();
+  }
+
+  Future<void> clearBoughtShopping() async {
+    shoppingItems = shoppingItems.where((s) => !s.completed).toList();
     await _persist();
     notifyListeners();
   }
@@ -658,6 +875,33 @@ class AppState extends ChangeNotifier {
     _api.delete('/memories/$id');
   }
 
+  Future<void> editMemory(
+    String id, {
+    required String title,
+    required String content,
+    required String category,
+    required String subtitle,
+  }) async {
+    final iconKind = category == 'dates'
+        ? 'calendar'
+        : category == 'people'
+            ? 'user'
+            : 'note';
+    memories = memories.map((m) {
+      if (m.id != id) return m;
+      return MemoryModel(
+        id: m.id,
+        title: title.trim(),
+        content: content.trim(),
+        subtitle: subtitle.trim().isEmpty ? 'Saved by you' : subtitle.trim(),
+        category: category,
+        iconKind: iconKind,
+      );
+    }).toList();
+    await _persist();
+    notifyListeners();
+  }
+
   Future<void> clearAllMemories() async {
     memories = [];
     await _persist();
@@ -676,6 +920,12 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> deleteKeepForLater(String id) async {
+    keepForLaterItems = keepForLaterItems.where((k) => k.id != id).toList();
+    await _persist();
+    notifyListeners();
+  }
+
   Future<void> moveKeepToMemories(String id) async {
     final item = keepForLaterItems.firstWhere((e) => e.id == id);
     keepForLaterItems = keepForLaterItems.where((e) => e.id != id).toList();
@@ -689,6 +939,12 @@ class AppState extends ChangeNotifier {
       final next = (g.currentValue + 1).clamp(0, g.targetValue);
       return g.copyWith(currentValue: next);
     }).toList();
+    await _persist();
+    notifyListeners();
+  }
+
+  Future<void> deleteGoal(String id) async {
+    goals = goals.where((g) => g.id != id).toList();
     await _persist();
     notifyListeners();
   }
@@ -713,12 +969,44 @@ class AppState extends ChangeNotifier {
       AffirmationModel(
         id: 'a_${DateTime.now().millisecondsSinceEpoch}',
         quote: formatted,
-        savedLabel: 'Saved Nov 10, 2026',
+        savedLabel: _formattedSavedDate(),
       ),
       ...affirmations,
     ];
     await _persist();
     notifyListeners();
+  }
+
+  Future<void> editAffirmation(String id, String quote) async {
+    final formatted = quote.startsWith('“') ? quote : '“${quote.trim()}”';
+    affirmations = affirmations.map((a) {
+      if (a.id != id) return a;
+      return AffirmationModel(id: a.id, quote: formatted, savedLabel: a.savedLabel);
+    }).toList();
+    await _persist();
+    notifyListeners();
+  }
+
+  Future<void> deleteAffirmation(String id) async {
+    affirmations = affirmations.where((a) => a.id != id).toList();
+    await _persist();
+    notifyListeners();
+  }
+
+  Future<void> scheduleAffirmationReminder(String label) async {
+    affirmationReminderLabel = label;
+    await addReminder('Revisit affirmations', displayTime: label);
+    await _persist();
+    notifyListeners();
+  }
+
+  String _formattedSavedDate() {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    final now = DateTime.now();
+    return 'Saved ${months[now.month - 1]} ${now.day}, ${now.year}';
   }
 
   // ---------------- AI ASSISTANT, VOICE & BRAIN DUMP ----------------
@@ -734,12 +1022,15 @@ class AppState extends ChangeNotifier {
         text: trimmed,
       ),
     ];
+    isAiThinking = true;
     notifyListeners();
 
-    final remote = await _api.post('/ai/chat', {
-      'message': trimmed,
-      'require_confirm': true,
-    });
+    final remote = backendConnected
+        ? await _api.post('/ai/chat', {
+            'message': trimmed,
+            'require_confirm': true,
+          })
+        : null;
 
     if (remote != null && remote['message'] != null) {
       final msgMap = Map<String, dynamic>.from(remote['message'] as Map);
@@ -760,6 +1051,7 @@ class AppState extends ChangeNotifier {
         monthlyActionsUsed: user.monthlyActionsUsed + 1,
         aiCredits: (user.aiCredits - 1).clamp(0, 9999),
       );
+      isAiThinking = false;
       await _persist();
       notifyListeners();
       if (speakReply) await _voice.speak(replyText);
@@ -834,9 +1126,36 @@ class AppState extends ChangeNotifier {
       monthlyActionsUsed: user.monthlyActionsUsed + 1,
       aiCredits: (user.aiCredits - 1).clamp(0, 9999),
     );
+    isAiThinking = false;
     await _persist();
     notifyListeners();
     if (speakReply) await _voice.speak(replyText);
+  }
+
+  void updatePendingChatAction(
+    String messageId, {
+    required String title,
+    required String displayTime,
+  }) {
+    chatMessages = chatMessages.map((m) {
+      if (m.id == messageId && m.pendingAction != null) {
+        return m.copyWith(
+          pendingAction: m.pendingAction!.copyWith(
+            title: title.trim(),
+            displayTime: displayTime.trim(),
+          ),
+        );
+      }
+      return m;
+    }).toList();
+    _persist();
+    notifyListeners();
+  }
+
+  Future<void> clearChat() async {
+    chatMessages = [];
+    await _persist();
+    notifyListeners();
   }
 
   Future<void> confirmPendingChatAction(String messageId) async {
@@ -866,7 +1185,9 @@ class AppState extends ChangeNotifier {
 
   Future<void> processVoiceBrainDump(String transcript) async {
     lastBrainDumpTranscript = transcript;
-    final remote = await _api.post('/ai/brain-dump', {'transcript': transcript});
+    final remote = backendConnected
+        ? await _api.post('/ai/brain-dump', {'transcript': transcript})
+        : null;
     if (remote != null) {
       final list = <BrainDumpDraftItem>[];
       for (final t in (remote['tasks'] as List? ?? const [])) {
@@ -948,6 +1269,35 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void updateBrainDumpItem(String id, {required String title, required String subtitle}) {
+    brainDumpDrafts = brainDumpDrafts
+        .map((d) => d.id == id ? d.copyWith(title: title.trim(), subtitle: subtitle.trim()) : d)
+        .toList();
+    notifyListeners();
+  }
+
+  void removeBrainDumpItem(String id) {
+    brainDumpDrafts = brainDumpDrafts.where((d) => d.id != id).toList();
+    notifyListeners();
+  }
+
+  String buildMorningBriefingText() {
+    final pendingToday = tasks.where((t) => !t.completed && t.section == 'today').toList();
+    final upcomingRems = reminders.where((r) => !r.completed).toList();
+    final parts = <String>[
+      'Good morning ${user.fullName}. Here is your day.',
+      if (pendingToday.isNotEmpty)
+        'You have ${pendingToday.length} tasks due today, starting with ${pendingToday.first.title}.'
+      else
+        'You have no tasks due today.',
+      if (upcomingRems.isNotEmpty)
+        'Next reminder: ${upcomingRems.first.title} at ${upcomingRems.first.displayTime}.',
+      if (pendingShoppingCount > 0)
+        'There are $pendingShoppingCount items on your shopping list.',
+    ];
+    return parts.join(' ');
+  }
+
   Future<int> saveSelectedBrainDumpActions() async {
     int count = 0;
     for (final item in brainDumpDrafts.where((d) => d.selected)) {
@@ -991,6 +1341,18 @@ class AppState extends ChangeNotifier {
   }
 
   // ---------------- PHASE 2 ----------------
+  Future<void> setMonthlyBudgetLimit(int limit) async {
+    monthlyBudgetLimit = limit.clamp(1000, 10000000);
+    await _persist();
+    notifyListeners();
+  }
+
+  Future<void> deleteExpense(String id) async {
+    expenses = expenses.where((e) => e.id != id).toList();
+    await _persist();
+    notifyListeners();
+  }
+
   Future<void> addExpense(String title, int amount, String category) async {
     expenses = [
       ExpenseModel(

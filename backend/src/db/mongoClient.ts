@@ -16,16 +16,25 @@ export async function getMongoDb(): Promise<Db | null> {
   if (!globalThis.__mongoClientPromise) {
     const client = new MongoClient(env.mongoUri, {
       maxPoolSize: 10,
+      connectTimeoutMS: 5000,
       serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 10000,
     });
-    globalThis.__mongoClientPromise = client.connect();
+    globalThis.__mongoClientPromise = client.connect().catch((err) => {
+      globalThis.__mongoClientPromise = undefined;
+      throw err;
+    });
   }
 
   const client = await globalThis.__mongoClientPromise;
   const db = client.db(env.mongoDbName);
 
   if (!globalThis.__mongoIndexesReady) {
-    await ensureMongoIndexes(db);
+    try {
+      await ensureMongoIndexes(db);
+    } catch (err) {
+      console.warn('Mongo index check warning:', err instanceof Error ? err.message : err);
+    }
     globalThis.__mongoIndexesReady = true;
   }
 

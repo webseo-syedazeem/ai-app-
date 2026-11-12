@@ -24,9 +24,45 @@ class WelcomeScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 10),
-              const StaggeredReveal(index: 0, child: AppBrandMark(size: 31)),
-              const SizedBox(height: 28),
+              const SizedBox(height: 12),
+              StaggeredReveal(
+                index: 0,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const AppBrandMark(size: 34),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+                      decoration: BoxDecoration(
+                        gradient: AppGradients.softLavCard,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: AppColors.softLavBorder),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const AppVectorIcon(
+                            AppIconType.sparkle,
+                            size: 13,
+                            color: AppColors.indigo,
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            'AI ASSISTANT',
+                            style: AppTheme.inter(
+                              size: 9.5,
+                              weight: FontWeight.w800,
+                              color: AppColors.indigoText,
+                              letterSpacing: 0.9,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
               const StaggeredReveal(
                 index: 1,
                 child: EyebrowText('YOUR EVERYDAY SECOND BRAIN'),
@@ -46,7 +82,7 @@ class WelcomeScreen extends StatelessWidget {
                 child: Text(
                   'Turn everyday thoughts into organized plans, helpful reminders and peace of mind.',
                   style: AppTheme.inter(
-                    size: 13.5,
+                    size: 14,
                     weight: FontWeight.w400,
                     color: AppColors.mutedText,
                     height: 1.55,
@@ -58,76 +94,85 @@ class WelcomeScreen extends StatelessWidget {
                   index: 4,
                   child: Center(
                     child: SizedBox(
-                      height: 265,
+                      height: 270,
                       width: double.infinity,
                       child: Stack(
                         alignment: Alignment.center,
                         children: [
                           Container(
-                            width: 280,
-                            height: 240,
+                            width: 290,
+                            height: 250,
                             decoration: const BoxDecoration(
                               shape: BoxShape.circle,
                               gradient: RadialGradient(
-                                colors: [Color(0xFFECEEFE), Color(0x00ECEEFE)],
+                                colors: [Color(0xFFE3E7FF), Color(0x00E3E7FF)],
                               ),
                             ),
                           ),
                           Positioned(
-                            right: 22,
-                            top: 28,
+                            right: 18,
+                            top: 24,
                             child: FloatingBob(
                               amplitude: 4.5,
                               phaseOffset: 1.4,
                               duration: const Duration(milliseconds: 3200),
                               child: Transform.rotate(
-                                angle: 14 * math.pi / 180,
+                                angle: 12 * math.pi / 180,
                                 child: Container(
-                                  width: 132,
-                                  height: 170,
+                                  width: 142,
+                                  height: 180,
+                                  padding: const EdgeInsets.all(14),
                                   decoration: BoxDecoration(
-                                    color: AppColors.card,
-                                    borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(color: const Color(0xFFE7E3E9)),
-                                    boxShadow: const [
-                                      BoxShadow(
-                                        color: Color(0x2226243A),
-                                        blurRadius: 40,
-                                        offset: Offset(0, 18),
+                                    gradient: AppGradients.softLavCard,
+                                    borderRadius: BorderRadius.circular(22),
+                                    border: Border.all(color: AppColors.softLavBorder),
+                                    boxShadow: AppShadows.softCard,
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const TileIconBox(
+                                        icon: AppIconType.calendar,
+                                        tone: TileTone.indigo,
+                                        size: 36,
+                                      ),
+                                      Text(
+                                        'Nov\nSmart plan',
+                                        textAlign: TextAlign.right,
+                                        style: AppTheme.inter(
+                                          size: 11,
+                                          weight: FontWeight.w700,
+                                          color: AppColors.indigoText,
+                                          height: 1.3,
+                                        ),
                                       ),
                                     ],
-                                  ),
-                                  child: const Center(
-                                    child: AppVectorIcon(
-                                      AppIconType.calendar,
-                                      size: 28,
-                                      color: Color(0xFF7186F4),
-                                    ),
                                   ),
                                 ),
                               ),
                             ),
                           ),
                           Positioned(
-                            left: 12,
-                            top: 42,
+                            left: 10,
+                            top: 38,
                             child: FloatingBob(
                               amplitude: 5.5,
                               duration: const Duration(milliseconds: 2800),
                               child: Transform.rotate(
-                                angle: -5 * math.pi / 180,
+                                angle: -4.5 * math.pi / 180,
                                 child: Container(
-                                  width: 250,
-                                  padding: const EdgeInsets.fromLTRB(18, 20, 18, 18),
+                                  width: 272,
+                                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
                                   decoration: BoxDecoration(
                                     color: AppColors.card,
-                                    borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(color: const Color(0xFFE7E3E9)),
+                                    borderRadius: BorderRadius.circular(22),
+                                    border: Border.all(color: AppColors.cardBorder),
                                     boxShadow: const [
                                       BoxShadow(
-                                        color: Color(0x2226243A),
-                                        blurRadius: 42,
-                                        offset: Offset(0, 20),
+                                        color: Color(0x1E26243A),
+                                        blurRadius: 36,
+                                        offset: Offset(0, 18),
                                       ),
                                     ],
                                   ),
@@ -137,43 +182,79 @@ class WelcomeScreen extends StatelessWidget {
                                     children: [
                                       Row(
                                         children: [
-                                          const AppVectorIcon(
-                                            AppIconType.checkCircle,
-                                            size: 22,
-                                            color: AppColors.indigo,
+                                          const TileIconBox(
+                                            icon: AppIconType.checkCircle,
+                                            tone: TileTone.indigo,
+                                            size: 32,
                                           ),
                                           const SizedBox(width: 9),
-                                          Text(
-                                            'Today’s plan',
-                                            style: AppTheme.inter(
-                                              size: 14,
-                                              weight: FontWeight.w800,
+                                          Expanded(
+                                            child: Text(
+                                              'Today’s plan',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: AppTheme.inter(
+                                                size: 14.5,
+                                                weight: FontWeight.w800,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 7, vertical: 3),
+                                            decoration: BoxDecoration(
+                                              color: AppColors.tileEmerald,
+                                              borderRadius: BorderRadius.circular(12),
+                                            ),
+                                            child: Text(
+                                              'READY',
+                                              style: AppTheme.inter(
+                                                size: 8.5,
+                                                weight: FontWeight.w800,
+                                                color: AppColors.greenText,
+                                              ),
                                             ),
                                           ),
                                         ],
                                       ),
                                       const SizedBox(height: 12),
                                       for (final item in const [
-                                        'Call Ali at 5:00 PM',
-                                        'Pick up groceries',
-                                        'Finish project notes',
+                                        ('Call Ali at 5:00 PM', Color(0xFF5365DF)),
+                                        ('Pick up groceries', Color(0xFF2FA37A)),
+                                        ('Finish project notes', Color(0xFFD98718)),
                                       ])
                                         Container(
                                           width: double.infinity,
-                                          margin: const EdgeInsets.only(top: 8),
+                                          margin: const EdgeInsets.only(top: 7),
                                           padding: const EdgeInsets.symmetric(
-                                              horizontal: 10, vertical: 8),
+                                              horizontal: 11, vertical: 9),
                                           decoration: BoxDecoration(
-                                            color: const Color(0xFFF1F0FB),
-                                            borderRadius: BorderRadius.circular(7),
+                                            color: const Color(0xFFF4F4FC),
+                                            borderRadius: BorderRadius.circular(10),
                                           ),
-                                          child: Text(
-                                            item,
-                                            style: AppTheme.inter(
-                                              size: 10,
-                                              weight: FontWeight.w500,
-                                              color: const Color(0xFF6E728D),
-                                            ),
+                                          child: Row(
+                                            children: [
+                                              Container(
+                                                width: 6,
+                                                height: 6,
+                                                decoration: BoxDecoration(
+                                                  color: item.$2,
+                                                  shape: BoxShape.circle,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: Text(
+                                                  item.$1,
+                                                  style: AppTheme.inter(
+                                                    size: 11.5,
+                                                    weight: FontWeight.w600,
+                                                    color: AppColors.navy,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ),
                                     ],
@@ -183,29 +264,29 @@ class WelcomeScreen extends StatelessWidget {
                             ),
                           ),
                           Positioned(
-                            right: 16,
-                            top: 12,
+                            right: 14,
+                            top: 8,
                             child: FloatingBob(
                               amplitude: 6.0,
                               phaseOffset: 2.2,
                               duration: const Duration(milliseconds: 2400),
                               child: Container(
-                                padding: const EdgeInsets.all(11),
+                                padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(15),
+                                  gradient: AppGradients.accentIndigo,
+                                  borderRadius: BorderRadius.circular(16),
                                   boxShadow: const [
                                     BoxShadow(
-                                      color: Color(0x1C353968),
-                                      blurRadius: 24,
-                                      offset: Offset(0, 12),
+                                      color: Color(0x365365DF),
+                                      blurRadius: 20,
+                                      offset: Offset(0, 10),
                                     ),
                                   ],
                                 ),
                                 child: const AppVectorIcon(
                                   AppIconType.sparkle,
-                                  size: 22,
-                                  color: AppColors.indigo,
+                                  size: 20,
+                                  color: Colors.white,
                                 ),
                               ),
                             ),
@@ -224,27 +305,39 @@ class WelcomeScreen extends StatelessWidget {
               ),
               const SizedBox(height: 14),
               Center(
-                child: GestureDetector(
-                  onTap: onSignIn,
-                  child: Text.rich(
-                    TextSpan(
+                child: Wrap(
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    Text(
+                      'Already have an account?',
                       style: AppTheme.inter(
-                        size: 11.5,
-                        color: const Color(0xFF8B8D9A),
+                        size: 12.5,
+                        color: AppColors.mutedText,
                       ),
-                      children: [
-                        const TextSpan(text: 'Already have an account? '),
-                        TextSpan(
-                          text: 'Sign in',
+                    ),
+                    BouncyTap(
+                      onTap: onSignIn,
+                      pressedScale: 0.94,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: AppColors.tileBlue,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          'Sign in',
                           style: AppTheme.inter(
-                            size: 11.5,
-                            weight: FontWeight.w700,
+                            size: 12,
+                            weight: FontWeight.w800,
                             color: AppColors.indigo,
                           ),
                         ),
-                      ],
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ),
               const SizedBox(height: 22),

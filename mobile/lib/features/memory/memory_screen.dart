@@ -59,11 +59,12 @@ class _MemoryScreenState extends State<MemoryScreen> {
         child: Column(
           children: [
             TopLineBar(
-              left: const AppBrandMark(size: 31),
+              left: const AppBrandMark(size: 33),
               title: 'Your memories',
-              right: GestureDetector(
+              right: AppHeaderIconBtn(
+                icon: AppIconType.plus,
+                accent: true,
                 onTap: () => _showAddMemory(context),
-                child: const AppVectorIcon(AppIconType.plus, size: 21),
               ),
             ),
             Expanded(
@@ -83,11 +84,11 @@ class _MemoryScreenState extends State<MemoryScreen> {
                     ),
                     const SizedBox(height: 16),
                     Container(
-                      height: 44,
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      height: 50,
+                      padding: const EdgeInsets.symmetric(horizontal: 15),
                       decoration: BoxDecoration(
                         color: AppColors.card,
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(15),
                         border: Border.all(color: AppColors.fieldBorder),
                         boxShadow: AppShadows.choose,
                       ),
@@ -96,18 +97,18 @@ class _MemoryScreenState extends State<MemoryScreen> {
                           const AppVectorIcon(
                             AppIconType.search,
                             size: 19,
-                            color: Color(0xFF9D9DA9),
+                            color: Color(0xFF8C8E9E),
                           ),
-                          const SizedBox(width: 9),
+                          const SizedBox(width: 10),
                           Expanded(
                             child: TextField(
                               onChanged: (v) => setState(() => _query = v),
-                              style: AppTheme.inter(size: 12),
+                              style: AppTheme.inter(size: 13.5, weight: FontWeight.w500),
                               decoration: InputDecoration(
                                 hintText: 'Search your memories',
                                 hintStyle: AppTheme.inter(
-                                  size: 11.5,
-                                  color: const Color(0xFF9D9DA9),
+                                  size: 13,
+                                  color: const Color(0xFF9A9BA9),
                                 ),
                                 border: InputBorder.none,
                                 isDense: true,
@@ -138,6 +139,19 @@ class _MemoryScreenState extends State<MemoryScreen> {
                         ],
                       ),
                     ),
+                    if (filtered.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 18),
+                        child: PremiumCard(
+                          padding: const EdgeInsets.all(16),
+                          child: Text(
+                            _query.trim().isEmpty
+                                ? 'No saved memories yet. Tap + to remember something important.'
+                                : 'No memories matching "$_query".',
+                            style: AppTheme.inter(size: 12, color: AppColors.subText),
+                          ),
+                        ),
+                      ),
                     if (importantDates.isNotEmpty) ...[
                       const StaggeredReveal(index: 1, child: SectionLabelRow(label: 'IMPORTANT DATES')),
                       StaggeredReveal(
@@ -145,7 +159,7 @@ class _MemoryScreenState extends State<MemoryScreen> {
                         child: _MemoryCard(
                           items: importantDates,
                           iconFor: _iconFor,
-                          onDelete: widget.appState.deleteMemory,
+                          onMore: (mem) => _showEditMemory(context, mem),
                         ),
                       ),
                     ],
@@ -156,7 +170,7 @@ class _MemoryScreenState extends State<MemoryScreen> {
                         child: _MemoryCard(
                           items: peopleAndNotes,
                           iconFor: _iconFor,
-                          onDelete: widget.appState.deleteMemory,
+                          onMore: (mem) => _showEditMemory(context, mem),
                         ),
                       ),
                     ],
@@ -178,47 +192,117 @@ class _MemoryScreenState extends State<MemoryScreen> {
     );
   }
 
+  void _showEditMemory(BuildContext context, MemoryModel mem) {
+    final titleCtrl = TextEditingController(text: mem.title);
+    final subCtrl = TextEditingController(text: mem.subtitle);
+    String category = mem.category;
+    showPremiumSheet(
+      context: context,
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (ctx, setModalState) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Edit or forget memory', style: AppTheme.inter(size: 19, weight: FontWeight.w800)),
+            const SizedBox(height: 14),
+            PremiumSheetField(
+              controller: titleCtrl,
+              label: 'Memory',
+              hint: 'e.g. Sister’s birthday',
+            ),
+            const SizedBox(height: 12),
+            PremiumSheetField(
+              controller: subCtrl,
+              label: 'Details / date',
+              hint: 'e.g. December 18 · Saved by you',
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 6,
+              children: [
+                for (final c in const ['dates', 'people', 'preferences'])
+                  AppChip(
+                    label: c[0].toUpperCase() + c.substring(1),
+                    active: category == c,
+                    onTap: () => setModalState(() => category = c),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            PrimaryButton(
+              label: 'Save memory',
+              onTap: () {
+                if (titleCtrl.text.trim().isNotEmpty) {
+                  widget.appState.editMemory(
+                    mem.id,
+                    title: titleCtrl.text.trim(),
+                    content: subCtrl.text.trim().isEmpty
+                        ? titleCtrl.text.trim()
+                        : subCtrl.text.trim(),
+                    category: category,
+                    subtitle: subCtrl.text.trim(),
+                  );
+                }
+                Navigator.pop(ctx);
+              },
+            ),
+            const SizedBox(height: 10),
+            PrimaryButton(
+              label: 'Forget this memory',
+              secondary: true,
+              trailingIcon: AppIconType.trash,
+              onTap: () {
+                widget.appState.deleteMemory(mem.id);
+                Navigator.pop(ctx);
+                showAppToast(context, 'Forgot "${mem.title}"');
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _showAddMemory(BuildContext context) {
     final titleCtrl = TextEditingController();
     final subCtrl = TextEditingController();
     String category = 'dates';
-    showDialog(
+    showPremiumSheet(
       context: context,
-      builder: (_) => StatefulBuilder(
-        builder: (ctx, setModalState) => AlertDialog(
-          backgroundColor: AppColors.card,
-          title: Text('Save memory', style: AppTheme.inter(size: 16, weight: FontWeight.w800)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: titleCtrl,
-                autofocus: true,
-                decoration: const InputDecoration(hintText: 'e.g. Sister’s birthday'),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: subCtrl,
-                decoration: const InputDecoration(hintText: 'e.g. December 18 · Saved by you'),
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 6,
-                children: [
-                  for (final c in const ['dates', 'people', 'preferences'])
-                    AppChip(
-                      label: c[0].toUpperCase() + c.substring(1),
-                      active: category == c,
-                      onTap: () => setModalState(() => category = c),
-                    ),
-                ],
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-            ElevatedButton(
-              onPressed: () {
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (ctx, setModalState) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Save memory', style: AppTheme.inter(size: 20, weight: FontWeight.w800)),
+            const SizedBox(height: 14),
+            PremiumSheetField(
+              controller: titleCtrl,
+              label: 'What should I remember?',
+              hint: 'e.g. Sister’s birthday',
+              autofocus: true,
+            ),
+            const SizedBox(height: 12),
+            PremiumSheetField(
+              controller: subCtrl,
+              label: 'Date or note',
+              hint: 'e.g. December 18 · Saved by you',
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 6,
+              children: [
+                for (final c in const ['dates', 'people', 'preferences'])
+                  AppChip(
+                    label: c[0].toUpperCase() + c.substring(1),
+                    active: category == c,
+                    onTap: () => setModalState(() => category = c),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            PrimaryButton(
+              label: 'Save to Memory',
+              trailingIcon: AppIconType.plus,
+              onTap: () {
                 if (titleCtrl.text.trim().isNotEmpty) {
                   widget.appState.addMemory(
                     titleCtrl.text.trim(),
@@ -228,10 +312,10 @@ class _MemoryScreenState extends State<MemoryScreen> {
                         ? 'Saved by you'
                         : subCtrl.text.trim(),
                   );
+                  Navigator.pop(ctx);
+                  showAppToast(context, 'Saved to Memory');
                 }
-                Navigator.pop(ctx);
               },
-              child: const Text('Save'),
             ),
           ],
         ),
@@ -243,59 +327,79 @@ class _MemoryScreenState extends State<MemoryScreen> {
 class _MemoryCard extends StatelessWidget {
   final List<MemoryModel> items;
   final AppIconType Function(String) iconFor;
-  final ValueChanged<String> onDelete;
+  final ValueChanged<MemoryModel> onMore;
 
   const _MemoryCard({
     required this.items,
     required this.iconFor,
-    required this.onDelete,
+    required this.onMore,
   });
+
+  TileTone _toneFor(String kind) {
+    switch (kind) {
+      case 'calendar':
+        return TileTone.amber;
+      case 'briefcase':
+        return TileTone.indigo;
+      case 'user':
+        return TileTone.violet;
+      default:
+        return TileTone.emerald;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return PremiumCard(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 6),
       child: Column(
         children: [
           for (int i = 0; i < items.length; i++) ...[
             if (i > 0) const Divider(height: 1, color: AppColors.divider),
-            Container(
-              constraints: const BoxConstraints(minHeight: 62),
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Row(
-                children: [
-                  TileIconBox(icon: iconFor(items[i].iconKind)),
-                  const SizedBox(width: 11),
-                  Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          items[i].title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTheme.inter(size: 12.3, weight: FontWeight.w700),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          items[i].subtitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTheme.inter(size: 10.5, color: AppColors.subText),
-                        ),
-                      ],
+            BouncyTap(
+              onTap: () => onMore(items[i]),
+              pressedScale: 0.985,
+              child: Container(
+                constraints: const BoxConstraints(minHeight: 66),
+                padding: const EdgeInsets.symmetric(vertical: 9),
+                child: Row(
+                  children: [
+                    TileIconBox(
+                      icon: iconFor(items[i].iconKind),
+                      tone: _toneFor(items[i].iconKind),
                     ),
-                  ),
-                  GestureDetector(
-                    onTap: () => onDelete(items[i].id),
-                    child: const AppVectorIcon(
-                      AppIconType.moreDots,
-                      size: 18,
-                      color: Color(0xFF74788C),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            items[i].title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTheme.inter(size: 14, weight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            items[i].subtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTheme.inter(size: 11.5, color: AppColors.subText),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                    const Padding(
+                      padding: EdgeInsets.all(6),
+                      child: AppVectorIcon(
+                        AppIconType.moreDots,
+                        size: 18,
+                        color: Color(0xFF74788C),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],

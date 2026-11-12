@@ -37,6 +37,7 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
   int _seconds = 7;
   bool _paused = false;
   bool _brainDumpMode = false;
+  bool _submitting = false;
   String _transcript = 'Remind me to call Ali tomorrow at 5 PM.';
 
   @override
@@ -65,7 +66,7 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
 
   void _startClock() {
     _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted && !_paused) {
+      if (mounted && !_paused && !_submitting) {
         setState(() => _seconds++);
       }
     });
@@ -86,6 +87,8 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
   }
 
   Future<void> _stopAndSubmit() async {
+    if (_submitting) return;
+    setState(() => _submitting = true);
     await widget.appState.voice.stopListening();
     final text = _transcript.trim();
     final looksLikeBrainDump =
@@ -98,55 +101,42 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
     }
   }
 
-  void _showModeOrEditMenu() {
-    showModalBottomSheet(
+  void _switchMode(bool brainDump) {
+    setState(() {
+      _brainDumpMode = brainDump;
+      _transcript = brainDump
+          ? 'Prepare the project update tomorrow, email the meeting notes Friday, call Ali tomorrow at 5 PM, buy eggs, bread and detergent'
+          : 'Remind me to call Ali tomorrow at 5 PM.';
+    });
+  }
+
+  void _editTranscript() {
+    final ctrl = TextEditingController(text: _transcript);
+    showPremiumSheet(
       context: context,
-      backgroundColor: const Color(0xFF1F213E),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-      ),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(22),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Voice Capture Mode',
-              style: AppTheme.inter(size: 16, weight: FontWeight.w800, color: Colors.white),
-            ),
-            const SizedBox(height: 12),
-            ListTile(
-              title: Text('Single action / reminder',
-                  style: AppTheme.inter(size: 13, color: Colors.white)),
-              subtitle: Text('“Remind me to call Ali tomorrow at 5 PM.”',
-                  style: AppTheme.inter(size: 11, color: AppColors.voiceMuted)),
-              onTap: () {
-                setState(() {
-                  _brainDumpMode = false;
-                  _transcript = 'Remind me to call Ali tomorrow at 5 PM.';
-                });
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              title: Text('Brain Dump mode (multi-task organizer)',
-                  style: AppTheme.inter(size: 13, color: Colors.white)),
-              subtitle: Text(
-                '“Prepare the project update tomorrow, email the meeting notes Friday, call Ali tomorrow at 5 PM, buy eggs, bread and detergent.”',
-                style: AppTheme.inter(size: 11, color: AppColors.voiceMuted),
-              ),
-              onTap: () {
-                setState(() {
-                  _brainDumpMode = true;
-                  _transcript =
-                      'Prepare the project update tomorrow, email the meeting notes Friday, call Ali tomorrow at 5 PM, buy eggs, bread and detergent';
-                });
-                Navigator.pop(context);
-              },
-            ),
-          ],
-        ),
+      builder: (sheetCtx) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Edit voice note', style: AppTheme.inter(size: 19, weight: FontWeight.w800)),
+          const SizedBox(height: 12),
+          PremiumSheetField(
+            controller: ctrl,
+            label: 'Transcript',
+            hint: 'Speak or type your command / brain dump...',
+            maxLines: 4,
+            autofocus: true,
+          ),
+          const SizedBox(height: 16),
+          PrimaryButton(
+            label: 'Update transcript',
+            onTap: () {
+              if (ctrl.text.trim().isNotEmpty) {
+                setState(() => _transcript = ctrl.text.trim());
+              }
+              Navigator.pop(sheetCtx);
+            },
+          ),
+        ],
       ),
     );
   }
@@ -156,224 +146,533 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
     return WarmScaffold(
       dark: true,
       child: SafeArea(
-        child: Stack(
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 26),
-              child: Column(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            children: [
+              const SizedBox(height: 10),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      GestureDetector(
-                        onTap: widget.onClose,
-                        child: const Text(
-                          '×',
-                          style: TextStyle(color: Colors.white, fontSize: 28, height: 1),
-                        ),
+                  BouncyTap(
+                    onTap: widget.onClose,
+                    pressedScale: 0.88,
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(13),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
                       ),
-                      Text(
-                        'AI Daily Helper',
-                        style: AppTheme.inter(
-                          size: 13.5,
-                          weight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
+                      child: const Icon(
+                        Icons.close_rounded,
+                        color: Colors.white,
+                        size: 21,
                       ),
-                      GestureDetector(
-                        onTap: _showModeOrEditMenu,
-                        child: const AppVectorIcon(
-                          AppIconType.moreDots,
-                          size: 22,
-                          color: Color(0xFFECEBFF),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
-                  const Spacer(flex: 2),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 6,
-                        height: 6,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFF8F98FF),
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(color: Color(0x336973FF), spreadRadius: 5),
+                  Expanded(
+                    child: Center(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 24,
+                              height: 24,
+                              decoration: BoxDecoration(
+                                gradient: AppGradients.accentIndigo,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Center(
+                                child: AppVectorIcon(
+                                  AppIconType.sparkle,
+                                  size: 13,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'AI Daily Helper',
+                              style: AppTheme.inter(
+                                size: 14.5,
+                                weight: FontWeight.w800,
+                                color: Colors.white,
+                                letterSpacing: -0.2,
+                              ),
+                            ),
                           ],
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        _brainDumpMode ? 'BRAIN DUMP CAPTURE' : 'VOICE CAPTURE',
-                        style: AppTheme.inter(
-                          size: 9.5,
-                          weight: FontWeight.w700,
-                          color: const Color(0xFFBDC3FF),
-                          letterSpacing: 2.0,
+                    ),
+                  ),
+                  BouncyTap(
+                    onTap: _editTranscript,
+                    pressedScale: 0.88,
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(13),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+                      ),
+                      child: const Center(
+                        child: AppVectorIcon(
+                          AppIconType.editPen,
+                          size: 18,
+                          color: Colors.white,
                         ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.07),
+                    borderRadius: BorderRadius.circular(28),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _DarkModePill(
+                        label: 'Quick command',
+                        icon: AppIconType.mic,
+                        active: !_brainDumpMode,
+                        onTap: () => _switchMode(false),
+                      ),
+                      const SizedBox(width: 4),
+                      _DarkModePill(
+                        label: 'Brain dump',
+                        icon: AppIconType.sparkle,
+                        active: _brainDumpMode,
+                        onTap: () => _switchMode(true),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 22),
-                  Text.rich(
-                    TextSpan(
-                      style: AppTheme.inter(
-                        size: 38,
-                        weight: FontWeight.w800,
-                        color: Colors.white,
-                        letterSpacing: -1,
+                ),
+              ),
+              const Spacer(flex: 2),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF5365DF).withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFF8C9AFF).withValues(alpha: 0.35)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 7,
+                      height: 7,
+                      decoration: BoxDecoration(
+                        color: _paused ? const Color(0xFFF6B759) : const Color(0xFF4CE5B1),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: _paused
+                                ? const Color(0x66F6B759)
+                                : const Color(0x884CE5B1),
+                            blurRadius: 6,
+                          ),
+                        ],
                       ),
-                      children: [
-                        TextSpan(text: _paused ? 'Paused' : 'Listening'),
-                        const TextSpan(
-                          text: '...',
-                          style: TextStyle(color: Color(0xFF8491FF)),
-                        ),
-                      ],
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      _brainDumpMode ? 'BRAIN DUMP CAPTURE' : 'VOICE CAPTURE',
+                      style: AppTheme.inter(
+                        size: 10,
+                        weight: FontWeight.w800,
+                        color: const Color(0xFFD5DAFF),
+                        letterSpacing: 1.8,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text.rich(
+                TextSpan(
+                  style: AppTheme.inter(
+                    size: 40,
+                    weight: FontWeight.w900,
+                    color: Colors.white,
+                    letterSpacing: -1.4,
+                    height: 1.05,
+                  ),
+                  children: [
+                    TextSpan(
+                      text: _submitting
+                          ? 'Organizing'
+                          : _paused
+                              ? 'Paused'
+                              : 'Listening',
+                    ),
+                    const TextSpan(
+                      text: '...',
+                      style: TextStyle(color: Color(0xFF8491FF)),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 18),
+              BouncyTap(
+                onTap: _editTranscript,
+                pressedScale: 0.985,
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(16, 15, 16, 14),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.065),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.14),
+                      width: 1.1,
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  Text(
-                    '“$_transcript”',
-                    textAlign: TextAlign.center,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTheme.inter(
-                      size: 14,
-                      color: AppColors.voiceSubtext,
-                      height: 1.65,
-                    ),
-                  ),
-                  const SizedBox(height: 46),
-                  SizedBox(
-                    height: 150,
-                    child: AnimatedBuilder(
-                      animation: _waveCtrl,
-                      builder: (_, _) {
-                        return Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: List.generate(_baseHeights.length, (i) {
-                            final factor = _paused
-                                ? 0.55
-                                : 0.72 +
-                                    0.35 *
-                                        math.sin(_waveCtrl.value * math.pi * 2 + i * 0.45)
-                                            .abs();
-                            return Container(
-                              width: 4,
-                              height: (_baseHeights[i] * factor).clamp(10.0, 145.0),
-                              margin: const EdgeInsets.symmetric(horizontal: 2),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(9),
-                                gradient: const LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [Color(0xFF9BA8FF), Color(0xFF5D70F3)],
-                                ),
-                                boxShadow: const [
-                                  BoxShadow(color: Color(0x33697DFA), blurRadius: 7),
-                                ],
-                              ),
-                            );
-                          }),
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Text(
-                    _formatTimer(_seconds),
-                    style: AppTheme.inter(
-                      size: 25,
-                      weight: FontWeight.w600,
-                      color: Colors.white,
-                      letterSpacing: 1.0,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    _paused ? 'paused' : 'recording',
-                    style: AppTheme.inter(size: 10.5, color: AppColors.voiceMuted),
-                  ),
-                  const Spacer(flex: 3),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 40),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        GestureDetector(
-                          onTap: () => setState(() => _paused = !_paused),
-                          child: Container(
-                            width: 45,
-                            height: 45,
-                            decoration: const BoxDecoration(
-                              color: AppColors.voiceActionBg,
-                              shape: BoxShape.circle,
+                  child: Column(
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 3,
+                            height: 44,
+                            margin: const EdgeInsets.only(top: 2, right: 12),
+                            decoration: BoxDecoration(
+                              gradient: AppGradients.accentIndigo,
+                              borderRadius: BorderRadius.circular(4),
                             ),
-                            child: const Center(
-                              child: AppVectorIcon(
-                                AppIconType.pause,
-                                size: 22,
-                                color: Colors.white,
+                          ),
+                          Expanded(
+                            child: Text(
+                              '“$_transcript”',
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTheme.inter(
+                                size: 15,
+                                weight: FontWeight.w600,
+                                color: Colors.white.withValues(alpha: 0.95),
+                                height: 1.5,
                               ),
                             ),
                           ),
-                        ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const AppVectorIcon(
+                                  AppIconType.editPen,
+                                  size: 12,
+                                  strokeWidth: 2.3,
+                                  color: Color(0xFFC5CBFF),
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  'Edit note',
+                                  style: AppTheme.inter(
+                                    size: 10.5,
+                                    weight: FontWeight.w700,
+                                    color: const Color(0xFFC5CBFF),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 26),
+              SizedBox(
+                height: 118,
+                child: AnimatedBuilder(
+                  animation: _waveCtrl,
+                  builder: (_, _) {
+                    return Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(_baseHeights.length, (i) {
+                        final factor = _paused
+                            ? 0.42
+                            : 0.65 +
+                                0.35 *
+                                    math.sin(_waveCtrl.value * math.pi * 2 + i * 0.45).abs();
+                        return Container(
+                          width: 4.5,
+                          height: (_baseHeights[i] * 0.85 * factor).clamp(10.0, 118.0),
+                          margin: const EdgeInsets.symmetric(horizontal: 2.2),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(9),
+                            gradient: const LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Color(0xFFC1C9FF),
+                                Color(0xFF6B7CFF),
+                                Color(0xFF4B5AE0),
+                              ],
+                            ),
+                          ),
+                        );
+                      }),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _submitting
+                          ? 'ORGANIZING'
+                          : _paused
+                              ? 'PAUSED'
+                              : 'REC',
+                      style: AppTheme.inter(
+                        size: 10,
+                        weight: FontWeight.w800,
+                        color: _paused ? const Color(0xFFF6B759) : const Color(0xFF8E9BFF),
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      _formatTimer(_seconds),
+                      style: AppTheme.inter(
+                        size: 16,
+                        weight: FontWeight.w800,
+                        color: Colors.white,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Spacer(flex: 2),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 18),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _StudioCircleButton(
+                      icon: _paused ? AppIconType.mic : AppIconType.pause,
+                      label: _paused ? 'Resume' : 'Pause',
+                      onTap: () => setState(() => _paused = !_paused),
+                    ),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
                         BouncyTap(
                           onTap: _stopAndSubmit,
                           pressedScale: 0.92,
                           child: AmbientPulseHalo(
-                            color: const Color(0x448491FF),
-                            maxScale: 1.32,
+                            color: const Color(0x4D6D7EFF),
+                            maxScale: 1.28,
                             child: Container(
-                              width: 71,
-                              height: 71,
-                              decoration: const BoxDecoration(
-                                color: AppColors.voiceStopBg,
+                              width: 76,
+                              height: 76,
+                              decoration: BoxDecoration(
+                                gradient: AppGradients.accentIndigo,
                                 shape: BoxShape.circle,
-                              ),
-                              child: const Center(
-                                child: Icon(
-                                  Icons.stop_rounded,
-                                  size: 30,
-                                  color: AppColors.voiceStopIcon,
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.28),
+                                  width: 1.5,
                                 ),
+                                boxShadow: const [
+                                  BoxShadow(
+                                    color: Color(0x555869F5),
+                                    blurRadius: 24,
+                                    offset: Offset(0, 8),
+                                  ),
+                                ],
+                              ),
+                              child: Center(
+                                child: _submitting
+                                    ? const SizedBox(
+                                        width: 26,
+                                        height: 26,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2.8,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : const Icon(
+                                        Icons.check_rounded,
+                                        size: 34,
+                                        color: Colors.white,
+                                      ),
                               ),
                             ),
                           ),
                         ),
-                        GestureDetector(
-                          onTap: widget.onClose,
-                          child: Container(
-                            width: 45,
-                            height: 45,
-                            decoration: const BoxDecoration(
-                              color: AppColors.voiceActionBg,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Center(
-                              child: AppVectorIcon(
-                                AppIconType.trash,
-                                size: 22,
-                                color: Colors.white,
-                              ),
-                            ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _brainDumpMode ? 'Organize' : 'Send',
+                          style: AppTheme.inter(
+                            size: 11.5,
+                            weight: FontWeight.w800,
+                            color: Colors.white,
                           ),
                         ),
                       ],
                     ),
+                    _StudioCircleButton(
+                      icon: AppIconType.trash,
+                      label: 'Cancel',
+                      onTap: widget.onClose,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                'Your thoughts stay private. Review before saving.',
+                style: AppTheme.inter(size: 11, color: const Color(0xFF9396B5)),
+              ),
+              const SizedBox(height: 18),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StudioCircleButton extends StatelessWidget {
+  final AppIconType icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _StudioCircleButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        BouncyTap(
+          onTap: onTap,
+          pressedScale: 0.9,
+          child: Container(
+            width: 54,
+            height: 54,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.09),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+            ),
+            child: Center(
+              child: AppVectorIcon(
+                icon,
+                size: 22,
+                strokeWidth: 2.3,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          label,
+          style: AppTheme.inter(
+            size: 11,
+            weight: FontWeight.w600,
+            color: const Color(0xFFB5B8D8),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DarkModePill extends StatelessWidget {
+  final String label;
+  final AppIconType icon;
+  final bool active;
+  final VoidCallback onTap;
+
+  const _DarkModePill({
+    required this.label,
+    required this.icon,
+    required this.active,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return BouncyTap(
+      onTap: onTap,
+      pressedScale: 0.95,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          gradient: active ? AppGradients.accentIndigo : null,
+          color: active ? null : Colors.transparent,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: active
+              ? const [
+                  BoxShadow(
+                    color: Color(0x3D5466EA),
+                    blurRadius: 10,
+                    offset: Offset(0, 3),
                   ),
-                  const SizedBox(height: 26),
-                  Text(
-                    'Your thoughts are private. Review before saving.',
-                    style: AppTheme.inter(size: 10, color: const Color(0xFF9A9CB9)),
-                  ),
-                  const SizedBox(height: 22),
-                ],
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppVectorIcon(
+              icon,
+              size: 13.5,
+              strokeWidth: 2.4,
+              color: active ? Colors.white : const Color(0xFFB3B6D6),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: AppTheme.inter(
+                size: 11.5,
+                weight: FontWeight.w800,
+                color: active ? Colors.white : const Color(0xFFB3B6D6),
               ),
             ),
           ],

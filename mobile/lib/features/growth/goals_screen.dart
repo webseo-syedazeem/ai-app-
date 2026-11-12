@@ -2,6 +2,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../app/app_state.dart';
 import '../../app/theme.dart';
+import '../../core/models/models.dart';
+import '../../core/widgets/app_animations.dart';
 import '../../core/widgets/app_icons.dart';
 import '../../core/widgets/warm_scaffold.dart';
 
@@ -50,14 +52,15 @@ class _GoalsScreenState extends State<GoalsScreen> {
         child: Column(
           children: [
             TopLineBar(
-              left: GestureDetector(
+              left: AppHeaderIconBtn(
+                icon: AppIconType.chevronLeft,
                 onTap: widget.onBack,
-                child: const AppVectorIcon(AppIconType.chevronLeft, size: 21),
               ),
               title: 'Goals & achievements',
-              right: GestureDetector(
+              right: AppHeaderIconBtn(
+                icon: AppIconType.plus,
+                accent: true,
                 onTap: () => _showAddGoal(context),
-                child: const AppVectorIcon(AppIconType.plus, size: 21),
               ),
             ),
             Expanded(
@@ -92,150 +95,191 @@ class _GoalsScreenState extends State<GoalsScreen> {
                       ],
                     ),
                     const SizedBox(height: 16),
-                    PremiumCard(
-                      soft: true,
-                      padding: const EdgeInsets.all(22),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                _period == 'week' ? 'WEEKLY GOALS' : 'MONTHLY GOALS',
-                                style: AppTheme.inter(
-                                  size: 9.5,
-                                  weight: FontWeight.w800,
-                                  color: const Color(0xFF7C83AF),
-                                  letterSpacing: 1.0,
+                    StaggeredReveal(
+                      index: 0,
+                      child: PremiumCard(
+                        soft: true,
+                        padding: const EdgeInsets.all(22),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _period == 'week' ? 'WEEKLY GOALS' : 'MONTHLY GOALS',
+                                  style: AppTheme.inter(
+                                    size: 9.5,
+                                    weight: FontWeight.w800,
+                                    color: const Color(0xFF7C83AF),
+                                    letterSpacing: 1.0,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 5),
-                              Text(
-                                '$achievedDisplay of $totalDisplay',
-                                style: AppTheme.inter(size: 30, weight: FontWeight.w800),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'goals achieved',
-                                style: AppTheme.inter(
-                                  size: 11,
-                                  color: const Color(0xFF8B8FB3),
+                                const SizedBox(height: 5),
+                                Text(
+                                  '$achievedDisplay of $totalDisplay',
+                                  style: AppTheme.inter(size: 30, weight: FontWeight.w800),
                                 ),
-                              ),
-                            ],
-                          ),
-                          _DonutRing(
-                            size: 87,
-                            stroke: 11,
-                            progress: ratio,
-                            centerLabel: '${(ratio * 100).round()}%',
-                            fontSize: 17,
-                          ),
-                        ],
+                                const SizedBox(height: 4),
+                                Text(
+                                  'goals achieved',
+                                  style: AppTheme.inter(
+                                    size: 11,
+                                    color: const Color(0xFF8B8FB3),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            _DonutRing(
+                              size: 87,
+                              stroke: 11,
+                              progress: ratio,
+                              centerLabel: '${(ratio * 100).round()}%',
+                              fontSize: 17,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                     const SectionLabelRow(label: 'YOUR GOALS'),
-                    for (final g in goals)
-                      GestureDetector(
-                        onTap: () => widget.appState.incrementGoal(g.id),
-                        child: Container(
-                          width: double.infinity,
-                          margin: const EdgeInsets.only(bottom: 10),
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: AppColors.card,
-                            borderRadius: BorderRadius.circular(19),
-                            border: Border.all(color: AppColors.cardBorder),
-                            boxShadow: AppShadows.card,
-                          ),
-                          child: Column(
-                            children: [
-                              Row(
+                    if (goals.isEmpty)
+                      PremiumCard(
+                        padding: const EdgeInsets.all(18),
+                        child: Text(
+                          'No $_period goals yet. Tap + in the top right to set one.',
+                          style: AppTheme.inter(size: 12.5, color: AppColors.mutedText),
+                        ),
+                      ),
+                    for (int i = 0; i < goals.length; i++)
+                      StaggeredReveal(
+                        index: i + 1,
+                        child: GestureDetector(
+                          onLongPress: () => _showGoalActions(context, goals[i]),
+                          child: BouncyTap(
+                            onTap: () {
+                              final g = goals[i];
+                              if (g.isCompleted) {
+                                _showGoalActions(context, g);
+                                return;
+                              }
+                              widget.appState.incrementGoal(g.id);
+                              final done = g.currentValue + 1 >= g.targetValue;
+                              showAppToast(
+                                context,
+                                done
+                                    ? 'Goal achieved: ${g.title}!'
+                                    : '+1 logged for “${g.title}”',
+                              );
+                            },
+                            child: Container(
+                              width: double.infinity,
+                              margin: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: AppColors.card,
+                                borderRadius: BorderRadius.circular(22),
+                                border: Border.all(color: AppColors.cardBorder, width: 1.2),
+                                boxShadow: AppShadows.card,
+                              ),
+                              child: Column(
                                 children: [
-                                  Container(
-                                    width: 34,
-                                    height: 34,
-                                    decoration: BoxDecoration(
-                                      color: AppColors.tileBlue,
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    child: Center(
-                                      child: AppVectorIcon(
-                                        _iconFor(g.iconKind),
-                                        size: 18,
-                                        color: AppColors.indigoEm,
+                                  Row(
+                                    children: [
+                                      TileIconBox(
+                                        icon: _iconFor(goals[i].iconKind),
+                                        tone: goals[i].isCompleted
+                                            ? TileTone.emerald
+                                            : TileTone.indigo,
+                                        size: 40,
                                       ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          g.title,
-                                          style: AppTheme.inter(size: 11.5, weight: FontWeight.w700),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              goals[i].title,
+                                              style: AppTheme.inter(size: 14, weight: FontWeight.w800),
+                                            ),
+                                            const SizedBox(height: 3),
+                                            Text(
+                                              goals[i].isCompleted
+                                                  ? 'Completed'
+                                                  : '${goals[i].currentValue} of ${goals[i].targetValue} ${goals[i].unitLabel}',
+                                              style: AppTheme.inter(
+                                                  size: 11.5, color: AppColors.subText),
+                                            ),
+                                          ],
                                         ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          g.isCompleted
-                                              ? 'Completed'
-                                              : '${g.currentValue} of ${g.targetValue} ${g.unitLabel}',
-                                          style: AppTheme.inter(size: 10, color: const Color(0xFF989BAA)),
+                                      ),
+                                      Text(
+                                        '${goals[i].percent}%',
+                                        style: AppTheme.inter(
+                                          size: 14.5,
+                                          weight: FontWeight.w900,
+                                          color: AppColors.indigoText,
                                         ),
-                                      ],
-                                    ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      GestureDetector(
+                                        onTap: () => _showGoalActions(context, goals[i]),
+                                        behavior: HitTestBehavior.opaque,
+                                        child: const Padding(
+                                          padding: EdgeInsets.all(4),
+                                          child: AppVectorIcon(
+                                            AppIconType.moreDots,
+                                            size: 17,
+                                            color: Color(0xFF74788C),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  Text(
-                                    '${g.percent}%',
-                                    style: AppTheme.inter(
-                                      size: 13,
-                                      weight: FontWeight.w800,
-                                      color: AppColors.indigoText,
-                                    ),
-                                  ),
+                                  const SizedBox(height: 14),
+                                  _GradientProgressBar(progress: goals[i].progress),
                                 ],
                               ),
-                              const SizedBox(height: 14),
-                              _GradientProgressBar(progress: g.progress),
-                            ],
+                            ),
                           ),
                         ),
                       ),
                     const SizedBox(height: 6),
-                    PremiumCard(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                      child: Container(
-                        constraints: const BoxConstraints(minHeight: 58),
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Row(
-                          children: [
-                            const TileIconBox(icon: AppIconType.star),
-                            const SizedBox(width: 11),
-                            Expanded(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Achievement history',
-                                    style: AppTheme.inter(size: 12.3, weight: FontWeight.w700),
-                                  ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    'See previous weeks and months',
-                                    style: AppTheme.inter(size: 10.5, color: AppColors.subText),
-                                  ),
-                                ],
+                    StaggeredReveal(
+                      index: goals.length + 1,
+                      child: PremiumCard(
+                        onTap: () => _showAchievementHistory(context),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                        child: Container(
+                          constraints: const BoxConstraints(minHeight: 58),
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Row(
+                            children: [
+                              const TileIconBox(icon: AppIconType.star),
+                              const SizedBox(width: 11),
+                              Expanded(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Achievement history',
+                                      style: AppTheme.inter(size: 14, weight: FontWeight.w800),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      'See previous weeks and months',
+                                      style: AppTheme.inter(size: 11.5, color: AppColors.subText),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            const AppVectorIcon(
-                              AppIconType.chevronRight,
-                              size: 17,
-                              color: Color(0xFF74788C),
-                            ),
-                          ],
+                              const AppVectorIcon(
+                                AppIconType.chevronRight,
+                                size: 17,
+                                color: Color(0xFF74788C),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -249,48 +293,173 @@ class _GoalsScreenState extends State<GoalsScreen> {
     );
   }
 
+  void _showGoalActions(BuildContext context, GoalModel goal) {
+    showPremiumSheet(
+      context: context,
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(goal.title, style: AppTheme.inter(size: 17, weight: FontWeight.w800)),
+          const SizedBox(height: 4),
+          Text(
+            '${goal.currentValue} of ${goal.targetValue} ${goal.unitLabel} · ${goal.period == 'week' ? 'Weekly' : 'Monthly'}',
+            style: AppTheme.inter(size: 12, color: AppColors.mutedText),
+          ),
+          const SizedBox(height: 14),
+          if (!goal.isCompleted)
+            SheetActionRow(
+              icon: AppIconType.checkCircle,
+              title: 'Log +1 progress',
+              subtitle: 'Move toward ${goal.targetValue} ${goal.unitLabel}',
+              color: AppColors.indigo,
+              onTap: () {
+                Navigator.pop(ctx);
+                widget.appState.incrementGoal(goal.id);
+                final done = goal.currentValue + 1 >= goal.targetValue;
+                showAppToast(
+                  context,
+                  done ? 'Goal achieved: ${goal.title}!' : '+1 logged for “${goal.title}”',
+                );
+              },
+            ),
+          SheetActionRow(
+            icon: AppIconType.trash,
+            title: 'Remove goal',
+            subtitle: 'Delete this goal from your list',
+            color: const Color(0xFFD65A5A),
+            onTap: () {
+              Navigator.pop(ctx);
+              widget.appState.deleteGoal(goal.id);
+              showAppToast(context, 'Removed “${goal.title}”');
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAchievementHistory(BuildContext context) {
+    final allGoals = widget.appState.goals;
+    final completed = allGoals.where((g) => g.isCompleted).toList();
+    showPremiumSheet(
+      context: context,
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Achievement history', style: AppTheme.inter(size: 18, weight: FontWeight.w800)),
+          const SizedBox(height: 4),
+          Text(
+            '${completed.length} of ${allGoals.length} active goals completed overall',
+            style: AppTheme.inter(size: 12, color: AppColors.mutedText),
+          ),
+          const SizedBox(height: 14),
+          if (completed.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.bgMid,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Text(
+                'Keep tapping your goals as you make progress. Completed milestones appear right here.',
+                style: AppTheme.inter(size: 12.5, color: AppColors.mutedText, height: 1.5),
+              ),
+            ),
+          for (final g in completed)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                children: [
+                  const AppVectorIcon(
+                    AppIconType.checkCircle,
+                    size: 18,
+                    color: AppColors.indigo,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      g.title,
+                      style: AppTheme.inter(size: 13.5, weight: FontWeight.w600),
+                    ),
+                  ),
+                  Text(
+                    g.period == 'week' ? 'Weekly' : 'Monthly',
+                    style: AppTheme.inter(size: 11, color: AppColors.subText),
+                  ),
+                ],
+              ),
+            ),
+          const SizedBox(height: 10),
+          PrimaryButton(
+            label: 'Back to goals',
+            secondary: true,
+            onTap: () => Navigator.pop(ctx),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showAddGoal(BuildContext context) {
     final titleCtrl = TextEditingController();
     final targetCtrl = TextEditingController(text: '5');
-    showDialog(
+    String period = _period;
+    showPremiumSheet(
       context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: AppColors.card,
-        title: Text('New goal', style: AppTheme.inter(size: 16, weight: FontWeight.w800)),
-        content: Column(
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (ctx, setModalState) => Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            TextField(
+            Text('New goal', style: AppTheme.inter(size: 18, weight: FontWeight.w800)),
+            const SizedBox(height: 12),
+            PremiumSheetField(
               controller: titleCtrl,
+              label: 'Goal title',
+              hint: 'e.g. Walk 20 mins',
               autofocus: true,
-              decoration: const InputDecoration(hintText: 'Goal title (e.g. Walk 20 mins)'),
             ),
             const SizedBox(height: 10),
-            TextField(
+            PremiumSheetField(
               controller: targetCtrl,
+              label: 'Target count',
+              hint: 'e.g. 5',
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(hintText: 'Target count (e.g. 5)'),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              children: [
+                AppChip(
+                  label: 'This week',
+                  active: period == 'week',
+                  onTap: () => setModalState(() => period = 'week'),
+                ),
+                AppChip(
+                  label: 'This month',
+                  active: period == 'month',
+                  onTap: () => setModalState(() => period = 'month'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            PrimaryButton(
+              label: 'Create goal',
+              onTap: () {
+                final title = titleCtrl.text.trim();
+                final target = (int.tryParse(targetCtrl.text.trim()) ?? 5).clamp(1, 999);
+                if (title.isEmpty) return;
+                widget.appState.addGoal(title, target, 'complete', period: period);
+                setState(() => _period = period);
+                Navigator.pop(ctx);
+                showAppToast(context, 'Goal added: $title');
+              },
             ),
           ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () {
-              final target = int.tryParse(targetCtrl.text.trim()) ?? 5;
-              if (titleCtrl.text.trim().isNotEmpty) {
-                widget.appState.addGoal(
-                  titleCtrl.text.trim(),
-                  target,
-                  'complete',
-                  period: _period,
-                );
-              }
-              Navigator.pop(context);
-            },
-            child: const Text('Add'),
-          ),
-        ],
       ),
     );
   }

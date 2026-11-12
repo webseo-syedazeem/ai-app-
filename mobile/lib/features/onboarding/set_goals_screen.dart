@@ -21,30 +21,35 @@ class SetYourGoalsScreen extends StatelessWidget {
     (
       key: 'work',
       icon: AppIconType.briefcase,
+      tone: TileTone.indigo,
       title: 'Work & productivity',
       subtitle: 'Deadlines, tasks and meetings',
     ),
     (
       key: 'health',
       icon: AppIconType.heart,
+      tone: TileTone.rose,
       title: 'Health & habits',
       subtitle: 'Feel better, one day at a time',
     ),
     (
       key: 'shopping',
       icon: AppIconType.shoppingCart,
+      tone: TileTone.emerald,
       title: 'Shopping & errands',
       subtitle: 'Lists and things to pick up',
     ),
     (
       key: 'learning',
       icon: AppIconType.book,
+      tone: TileTone.amber,
       title: 'Learning',
       subtitle: 'Build useful new skills',
     ),
     (
       key: 'personal',
       icon: AppIconType.user,
+      tone: TileTone.violet,
       title: 'Personal life',
       subtitle: 'Important dates and little details',
     ),
@@ -57,9 +62,9 @@ class SetYourGoalsScreen extends StatelessWidget {
         child: Column(
           children: [
             TopLineBar(
-              left: GestureDetector(
+              left: AppHeaderIconBtn(
+                icon: AppIconType.chevronLeft,
                 onTap: onBack,
-                child: const AppVectorIcon(AppIconType.chevronLeft, size: 21),
               ),
             ),
             const OnboardingStepper(activeStep: 2),
@@ -79,12 +84,12 @@ class SetYourGoalsScreen extends StatelessWidget {
                     Text(
                       'Select the areas you’d like help keeping on track.',
                       style: AppTheme.inter(
-                        size: 13.5,
+                        size: 14,
                         color: AppColors.mutedText,
                         height: 1.55,
                       ),
                     ),
-                    const SizedBox(height: 18),
+                    const SizedBox(height: 20),
                     for (int i = 0; i < _options.length; i++)
                       StaggeredReveal(
                         index: i + 1,
@@ -92,28 +97,38 @@ class SetYourGoalsScreen extends StatelessWidget {
                           onTap: () => appState.toggleFocusArea(_options[i].key),
                           pressedScale: 0.98,
                           child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            constraints: const BoxConstraints(minHeight: 70),
-                            margin: const EdgeInsets.only(bottom: 10),
-                            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+                            duration: const Duration(milliseconds: 220),
+                            constraints: const BoxConstraints(minHeight: 74),
+                            margin: const EdgeInsets.only(bottom: 11),
+                            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
                             decoration: BoxDecoration(
-                              color: AppColors.card,
-                              borderRadius: BorderRadius.circular(14),
+                              gradient: appState.user.focusAreas.contains(_options[i].key)
+                                  ? AppGradients.softLavCard
+                                  : null,
+                              color: appState.user.focusAreas.contains(_options[i].key)
+                                  ? null
+                                  : AppColors.card,
+                              borderRadius: BorderRadius.circular(18),
                               border: Border.all(
                                 color: appState.user.focusAreas.contains(_options[i].key)
-                                    ? const Color(0xFFC5CAF2)
-                                    : AppColors.fieldBorder,
+                                    ? const Color(0xFF9EA8FA)
+                                    : AppColors.cardBorder,
+                                width: appState.user.focusAreas.contains(_options[i].key)
+                                    ? 1.4
+                                    : 1.0,
                               ),
-                              boxShadow: AppShadows.choose,
+                              boxShadow: appState.user.focusAreas.contains(_options[i].key)
+                                  ? AppShadows.softCard
+                                  : AppShadows.choose,
                             ),
                             child: Row(
                               children: [
-                                AppVectorIcon(
-                                  _options[i].icon,
-                                  size: 21,
-                                  color: const Color(0xFF5769CD),
+                                TileIconBox(
+                                  icon: _options[i].icon,
+                                  tone: _options[i].tone,
+                                  size: 42,
                                 ),
-                                const SizedBox(width: 12),
+                                const SizedBox(width: 13),
                                 Expanded(
                                   child: Column(
                                     mainAxisAlignment: MainAxisAlignment.center,
@@ -122,7 +137,7 @@ class SetYourGoalsScreen extends StatelessWidget {
                                       Text(
                                         _options[i].title,
                                         style: AppTheme.inter(
-                                          size: 12.5,
+                                          size: 14,
                                           weight: FontWeight.w800,
                                         ),
                                       ),
@@ -130,8 +145,8 @@ class SetYourGoalsScreen extends StatelessWidget {
                                       Text(
                                         _options[i].subtitle,
                                         style: AppTheme.inter(
-                                          size: 10.5,
-                                          color: const Color(0xFF9D9EAC),
+                                          size: 11.5,
+                                          color: AppColors.subText,
                                         ),
                                       ),
                                     ],

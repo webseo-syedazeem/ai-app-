@@ -10,6 +10,7 @@ export interface UserProfile {
   id: string;
   email: string;
   full_name: string;
+  password_hash?: string;
   plan: PlanTier;
   ai_credits: number;
   daily_actions_used: number;

@@ -1,6 +1,6 @@
 import { GoogleGenAI, Type, type FunctionDeclaration } from '@google/genai';
 import crypto from 'node:crypto';
-import { hasGeminiConfig } from '../config/env.js';
+import { env, hasGeminiConfig } from '../config/env.js';
 import { dataStore } from '../db/dataStore.js';
 import type { BrainDumpItemDraft } from '../types/domain.js';
 import { buildSystemPrompt, selectModelForInput } from './intentRouter.js';
@@ -177,6 +177,46 @@ export interface AssistantChatResponse {
   tokensEstimated: number;
 }
 
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function generateWithFallbackModel(
+  ai: GoogleGenAI,
+  primaryModel: string,
+  params: Omit<Parameters<GoogleGenAI['models']['generateContent']>[0], 'model'>
+) {
+  const canFallback = primaryModel !== env.geminiLiteModel;
+  try {
+    const call = ai.models.generateContent({ model: primaryModel, ...params });
+    const response = canFallback ? await withTimeout(call, 6500, primaryModel) : await call;
+    return { response, modelUsed: primaryModel };
+  } catch (err) {
+    if (canFallback) {
+      const response = await withTimeout(
+        ai.models.generateContent({
+          model: env.geminiLiteModel,
+          ...params,
+        }),
+        9000,
+        env.geminiLiteModel
+      );
+      return { response, modelUsed: env.geminiLiteModel };
+    }
+    throw err;
+  }
+}
+
 export async function runAssistantChat(
   userId: string,
   userMessage: string,
@@ -197,8 +237,7 @@ export async function runAssistantChat(
   const executedTools: Array<{ name: string; result: Record<string, unknown> }> = [];
 
   try {
-    const response = await ai.models.generateContent({
-      model: route.model,
+    const { response, modelUsed } = await generateWithFallbackModel(ai, route.model, {
       contents: userMessage,
       config: {
         systemInstruction,
@@ -219,8 +258,7 @@ export async function runAssistantChat(
 
     let reply = response.text?.trim() || '';
     if (!reply && executedTools.length > 0) {
-      const followUp = await ai.models.generateContent({
-        model: route.model,
+      const followUp = await generateWithFallbackModel(ai, modelUsed, {
         contents: [
           { role: 'user', parts: [{ text: userMessage }] },
           {
@@ -234,7 +272,7 @@ export async function runAssistantChat(
         ],
         config: { systemInstruction },
       });
-      reply = followUp.text?.trim() || 'Done.';
+      reply = followUp.response.text?.trim() || 'Done.';
     }
 
     const totalTokens =
@@ -243,7 +281,7 @@ export async function runAssistantChat(
 
     return {
       reply: reply || 'Done.',
-      modelUsed: route.model,
+      modelUsed,
       tier: route.tier,
       executedTools,
       pendingAction: null,
@@ -391,17 +429,18 @@ export async function runBrainDumpExtraction(
 }> {
   const route = selectModelForInput(transcript, true);
   let extracted = fallbackParseBrainDump(transcript);
+  let usedModel = hasGeminiConfig() ? route.model : `${route.model} (local-nlu)`;
 
   if (hasGeminiConfig()) {
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-      const res = await ai.models.generateContent({
-        model: route.model,
+      const { response: res, modelUsed } = await generateWithFallbackModel(ai, route.model, {
         contents: `Extract structured actions from this user voice brain dump. Return ONLY valid JSON with keys: tasks, reminders, shopping, memories. Each element must have {title, subtitle, due_at, category, priority}. Transcript:\n"${transcript}"`,
         config: {
           responseMimeType: 'application/json',
         },
       });
+      usedModel = modelUsed;
       const raw = res.text?.trim();
       if (raw) {
         const parsed = JSON.parse(raw) as Partial<Record<'tasks' | 'reminders' | 'shopping' | 'memories', Array<Record<string, unknown>>>>;
@@ -427,7 +466,7 @@ export async function runBrainDumpExtraction(
         };
       }
     } catch {
-      // Fallback already populated
+      usedModel = `${route.model} (local-nlu)`;
     }
   }
 
@@ -443,7 +482,7 @@ export async function runBrainDumpExtraction(
 
   return {
     draftId,
-    modelUsed: hasGeminiConfig() ? route.model : `${route.model} (local-nlu)`,
+    modelUsed: usedModel,
     ...extracted,
   };
 }

@@ -55,9 +55,9 @@ class _PersonalizeScreenState extends State<PersonalizeScreen> {
         child: Column(
           children: [
             TopLineBar(
-              left: GestureDetector(
+              left: AppHeaderIconBtn(
+                icon: AppIconType.chevronLeft,
                 onTap: widget.onBack,
-                child: const AppVectorIcon(AppIconType.chevronLeft, size: 21),
               ),
             ),
             const OnboardingStepper(activeStep: 3),
@@ -138,37 +138,44 @@ class _PersonalizeScreenState extends State<PersonalizeScreen> {
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 220),
                                 curve: Curves.easeOutCubic,
-                                height: 83,
+                                height: 92,
                                 decoration: BoxDecoration(
+                                  gradient: _tone == tones[i].key
+                                      ? AppGradients.softLavCard
+                                      : null,
                                   color: _tone == tones[i].key
-                                      ? AppColors.softLav
+                                      ? null
                                       : AppColors.card,
-                                  borderRadius: BorderRadius.circular(12),
+                                  borderRadius: BorderRadius.circular(16),
                                   border: Border.all(
                                     color: _tone == tones[i].key
-                                        ? const Color(0xFFAEB3E8)
-                                        : AppColors.fieldBorder,
+                                        ? const Color(0xFF9EA8FA)
+                                        : AppColors.cardBorder,
+                                    width: _tone == tones[i].key ? 1.4 : 1.0,
                                   ),
+                                  boxShadow: _tone == tones[i].key
+                                      ? AppShadows.softCard
+                                      : AppShadows.choose,
                                 ),
                                 child: Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    AppVectorIcon(
-                                      tones[i].icon,
-                                      size: 24,
-                                      color: _tone == tones[i].key
-                                          ? AppColors.indigoPick
-                                          : const Color(0xFF74768E),
+                                    TileIconBox(
+                                      icon: tones[i].icon,
+                                      tone: _tone == tones[i].key
+                                          ? TileTone.indigo
+                                          : TileTone.neutral,
+                                      size: 36,
                                     ),
-                                    const SizedBox(height: 9),
+                                    const SizedBox(height: 8),
                                     Text(
                                       tones[i].label,
                                       style: AppTheme.inter(
-                                        size: 10.5,
+                                        size: 12,
                                         weight: FontWeight.w700,
                                         color: _tone == tones[i].key
                                             ? AppColors.indigoPick
-                                            : const Color(0xFF74768E),
+                                            : const Color(0xFF686B82),
                                       ),
                                     ),
                                   ],

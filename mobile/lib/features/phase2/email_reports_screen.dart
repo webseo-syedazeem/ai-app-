@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../app/app_state.dart';
 import '../../app/theme.dart';
+import '../../core/widgets/app_animations.dart';
 import '../../core/widgets/app_icons.dart';
 import '../../core/widgets/warm_scaffold.dart';
 
@@ -21,9 +22,9 @@ class EmailReportsScreen extends StatelessWidget {
         child: Column(
           children: [
             TopLineBar(
-              left: GestureDetector(
+              left: AppHeaderIconBtn(
+                icon: AppIconType.chevronLeft,
                 onTap: onBack,
-                child: const AppVectorIcon(AppIconType.chevronLeft, size: 21),
               ),
               title: 'Email reports',
             ),
@@ -49,150 +50,203 @@ class EmailReportsScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 18),
-                    PremiumCard(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                      child: Column(
-                        children: [
-                          GestureDetector(
-                            onTap: () => appState.updateEmailReportPrefs(
-                              weekly: !appState.weeklyEmailSummary,
-                            ),
-                            behavior: HitTestBehavior.opaque,
-                            child: Container(
-                              constraints: const BoxConstraints(minHeight: 62),
-                              padding: const EdgeInsets.symmetric(vertical: 8),
-                              child: Row(
-                                children: [
-                                  const TileIconBox(icon: AppIconType.mail, blue: true),
-                                  const SizedBox(width: 11),
-                                  Expanded(
-                                    child: Column(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text('Weekly summary',
-                                            style: AppTheme.inter(size: 12.3, weight: FontWeight.w700)),
-                                        const SizedBox(height: 3),
-                                        Text('Every Sunday · 7:00 PM',
-                                            style: AppTheme.inter(size: 10.5, color: AppColors.subText)),
-                                      ],
+                    StaggeredReveal(
+                      index: 0,
+                      child: PremiumCard(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                        child: Column(
+                          children: [
+                            GestureDetector(
+                              onTap: () {
+                                final next = !appState.weeklyEmailSummary;
+                                appState.updateEmailReportPrefs(weekly: next);
+                                showAppToast(
+                                  context,
+                                  next
+                                      ? 'Weekly summary emails enabled'
+                                      : 'Weekly summary emails paused',
+                                );
+                              },
+                              behavior: HitTestBehavior.opaque,
+                              child: Container(
+                                constraints: const BoxConstraints(minHeight: 62),
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                child: Row(
+                                  children: [
+                                    const TileIconBox(icon: AppIconType.mail, blue: true),
+                                    const SizedBox(width: 11),
+                                    Expanded(
+                                      child: Column(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text('Weekly summary',
+                                              style: AppTheme.inter(
+                                                  size: 12.3, weight: FontWeight.w700)),
+                                          const SizedBox(height: 3),
+                                          Text('Every Sunday · 7:00 PM',
+                                              style: AppTheme.inter(
+                                                  size: 10.5, color: AppColors.subText)),
+                                        ],
+                                      ),
                                     ),
-                                  ),
-                                  AppVectorIcon(
-                                    AppIconType.checkCircle,
-                                    size: 18,
-                                    color: appState.weeklyEmailSummary
-                                        ? AppColors.indigo
-                                        : const Color(0xFFB8B9C7),
-                                  ),
-                                ],
+                                    AnimatedScale(
+                                      scale: appState.weeklyEmailSummary ? 1.05 : 1.0,
+                                      duration: const Duration(milliseconds: 200),
+                                      child: AppVectorIcon(
+                                        AppIconType.checkCircle,
+                                        size: 18,
+                                        color: appState.weeklyEmailSummary
+                                            ? AppColors.indigo
+                                            : const Color(0xFFB8B9C7),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
-                          ),
-                          const Divider(height: 1, color: AppColors.divider),
-                          GestureDetector(
-                            onTap: () => appState.updateEmailReportPrefs(
-                              monthly: !appState.monthlyEmailReview,
-                            ),
-                            behavior: HitTestBehavior.opaque,
-                            child: Container(
-                              constraints: const BoxConstraints(minHeight: 62),
-                              padding: const EdgeInsets.symmetric(vertical: 8),
-                              child: Row(
-                                children: [
-                                  const TileIconBox(icon: AppIconType.calendar),
-                                  const SizedBox(width: 11),
-                                  Expanded(
-                                    child: Column(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text('Monthly review',
-                                            style: AppTheme.inter(size: 12.3, weight: FontWeight.w700)),
-                                        const SizedBox(height: 3),
-                                        Text('First day of each month',
-                                            style: AppTheme.inter(size: 10.5, color: AppColors.subText)),
-                                      ],
+                            const Divider(height: 1, color: AppColors.divider),
+                            GestureDetector(
+                              onTap: () {
+                                final next = !appState.monthlyEmailReview;
+                                appState.updateEmailReportPrefs(monthly: next);
+                                showAppToast(
+                                  context,
+                                  next
+                                      ? 'Monthly review emails enabled'
+                                      : 'Monthly review emails paused',
+                                );
+                              },
+                              behavior: HitTestBehavior.opaque,
+                              child: Container(
+                                constraints: const BoxConstraints(minHeight: 62),
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                child: Row(
+                                  children: [
+                                    const TileIconBox(icon: AppIconType.calendar),
+                                    const SizedBox(width: 11),
+                                    Expanded(
+                                      child: Column(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text('Monthly review',
+                                              style: AppTheme.inter(
+                                                  size: 12.3, weight: FontWeight.w700)),
+                                          const SizedBox(height: 3),
+                                          Text('First day of each month',
+                                              style: AppTheme.inter(
+                                                  size: 10.5, color: AppColors.subText)),
+                                        ],
+                                      ),
                                     ),
-                                  ),
-                                  AppVectorIcon(
-                                    AppIconType.checkCircle,
-                                    size: 18,
-                                    color: appState.monthlyEmailReview
-                                        ? AppColors.indigo
-                                        : const Color(0xFFB8B9C7),
-                                  ),
-                                ],
+                                    AnimatedScale(
+                                      scale: appState.monthlyEmailReview ? 1.05 : 1.0,
+                                      duration: const Duration(milliseconds: 200),
+                                      child: AppVectorIcon(
+                                        AppIconType.checkCircle,
+                                        size: 18,
+                                        color: appState.monthlyEmailReview
+                                            ? AppColors.indigo
+                                            : const Color(0xFFB8B9C7),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                     const SectionLabelRow(label: 'EXAMPLE REPORT'),
-                    PremiumCard(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        children: [
-                          Text(
-                            'YOUR WEEK IN REVIEW',
-                            style: AppTheme.inter(
-                              size: 10,
-                              weight: FontWeight.w800,
-                              color: const Color(0xFF6779DE),
-                              letterSpacing: 1.5,
-                            ),
-                          ),
-                          const SizedBox(height: 18),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceAround,
-                            children: const [
-                              _ReportStat(value: '12', label: 'Tasks done'),
-                              _ReportStat(value: '03', label: 'Goals met'),
-                              _ReportStat(value: '02', label: 'Upcoming'),
-                            ],
-                          ),
-                          const SizedBox(height: 18),
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(13),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF2F3FF),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              'You made steady progress this week. Keep your momentum going.',
+                    StaggeredReveal(
+                      index: 1,
+                      child: PremiumCard(
+                        onTap: () => _showPreviewSheet(context),
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          children: [
+                            Text(
+                              'YOUR WEEK IN REVIEW',
                               style: AppTheme.inter(
-                                size: 12,
-                                color: const Color(0xFF777B96),
-                                height: 1.55,
+                                size: 10,
+                                weight: FontWeight.w800,
+                                color: const Color(0xFF6779DE),
+                                letterSpacing: 1.5,
                               ),
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 18),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceAround,
+                              children: [
+                                _ReportStat(
+                                  value: (12 + appState.tasks.where((t) => t.completed).length)
+                                      .toString()
+                                      .padLeft(2, '0'),
+                                  label: 'Tasks done',
+                                ),
+                                _ReportStat(
+                                  value: (appState.goals.where((g) => g.isCompleted).length + 2)
+                                      .toString()
+                                      .padLeft(2, '0'),
+                                  label: 'Goals met',
+                                ),
+                                _ReportStat(
+                                  value: appState.reminders
+                                      .where((r) => !r.completed)
+                                      .length
+                                      .toString()
+                                      .padLeft(2, '0'),
+                                  label: 'Upcoming',
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 18),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(13),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF2F3FF),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                'You made steady progress this week. Keep your momentum going.',
+                                style: AppTheme.inter(
+                                  size: 12,
+                                  color: const Color(0xFF777B96),
+                                  height: 1.55,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                    PremiumCard(
-                      soft: true,
-                      padding: const EdgeInsets.all(14),
-                      child: Row(
-                        children: [
-                          const AppVectorIcon(
-                            AppIconType.shieldCheck,
-                            size: 20,
-                            color: AppColors.indigo,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              'Opt in to emails anytime. Unsubscribe in one tap.',
-                              style: AppTheme.inter(
-                                size: 11,
-                                color: const Color(0xFF646A87),
+                    StaggeredReveal(
+                      index: 2,
+                      child: PremiumCard(
+                        soft: true,
+                        padding: const EdgeInsets.all(14),
+                        child: Row(
+                          children: [
+                            const AppVectorIcon(
+                              AppIconType.shieldCheck,
+                              size: 20,
+                              color: AppColors.indigo,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'Opt in to emails anytime. Unsubscribe in one tap.',
+                                style: AppTheme.inter(
+                                  size: 11,
+                                  color: const Color(0xFF646A87),
+                                ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -205,13 +259,59 @@ class EmailReportsScreen extends StatelessWidget {
                 label: appState.emailReportsEnabled
                     ? 'Email reports enabled ✓'
                     : 'Enable email reports',
-                onTap: () => appState.updateEmailReportPrefs(
-                  enabled: !appState.emailReportsEnabled,
-                ),
+                onTap: () {
+                  final next = !appState.emailReportsEnabled;
+                  appState.updateEmailReportPrefs(enabled: next);
+                  showAppToast(
+                    context,
+                    next
+                        ? 'Weekly & monthly email reports enabled'
+                        : 'Email reports paused',
+                  );
+                },
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showPreviewSheet(BuildContext context) {
+    final completed = 12 + appState.tasks.where((t) => t.completed).length;
+    final upcoming = appState.reminders.where((r) => !r.completed).length;
+    showPremiumSheet(
+      context: context,
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Sample weekly digest', style: AppTheme.inter(size: 18, weight: FontWeight.w800)),
+          const SizedBox(height: 6),
+          Text(
+            'Prepared for ${appState.user.fullName} · Sent ${appState.weeklyEmailSummary ? 'every Sunday 7:00 PM' : 'when weekly digest is enabled'}',
+            style: AppTheme.inter(size: 12, color: AppColors.mutedText),
+          ),
+          const SizedBox(height: 14),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.bgMid,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Text(
+              '• $completed tasks completed\n• $upcoming upcoming reminders scheduled\n• ${appState.memories.length} memories actively tracked',
+              style: AppTheme.inter(size: 12.5, height: 1.6),
+            ),
+          ),
+          const SizedBox(height: 16),
+          PrimaryButton(
+            label: 'Close preview',
+            secondary: true,
+            onTap: () => Navigator.pop(ctx),
+          ),
+        ],
       ),
     );
   }
