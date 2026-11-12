@@ -213,17 +213,32 @@ describe('HTTP REST API', () => {
       });
       expect(delAff.status).toBe(200);
 
-      // Phase 2 Budget update & expense delete
+      // Phase 2 Budget update (daily + monthly), folders, & expense delete
       const budgetPatch = await fetch(`${base}/api/phase2/budget`, {
         method: 'PATCH',
         headers: authHeaders,
-        body: JSON.stringify({ monthly_limit: 55000 }),
+        body: JSON.stringify({ monthly_limit: 55000, daily_limit: 2500 }),
       });
       expect(budgetPatch.status).toBe(200);
+      const folderRes = await fetch(`${base}/api/phase2/budget/folders`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ name: 'Family Utilities', period: 'monthly', tone: 'amber' }),
+      });
+      expect(folderRes.status).toBe(201);
+      const folderJson = (await folderRes.json()) as { folder: { id: string; name: string } };
+
       const expRes = await fetch(`${base}/api/phase2/budget/expense`, {
         method: 'POST',
         headers: authHeaders,
-        body: JSON.stringify({ title: 'Coffee', amount: 450, category: 'Food' }),
+        body: JSON.stringify({
+          title: 'Coffee',
+          amount: 450,
+          category: 'Food',
+          period: 'daily',
+          folder_id: folderJson.folder.id,
+          folder_name: folderJson.folder.name,
+        }),
       });
       expect(expRes.status).toBe(201);
       const expJson = (await expRes.json()) as { expense: { id: string } };
@@ -232,6 +247,11 @@ describe('HTTP REST API', () => {
         headers: authHeaders,
       });
       expect(delExp.status).toBe(200);
+      const delFolder = await fetch(`${base}/api/phase2/budget/folders/${folderJson.folder.id}`, {
+        method: 'DELETE',
+        headers: authHeaders,
+      });
+      expect(delFolder.status).toBe(200);
 
       // Google OAuth start check (json status when unconfigured or redirect when configured)
       const googleStart = await fetch(`${base}/api/auth/google/start?format=json`, {

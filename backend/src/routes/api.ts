@@ -1069,18 +1069,28 @@ apiRouter.get('/ai/forgetting', async (req: Request, res: Response) => {
 
 // ---------------- PHASE 2 ----------------
 apiRouter.get('/phase2/budget', async (req: Request, res: Response) => {
-  const { budget, expenses } = await dataStore.getBudgetOverview(getUserId(req));
+  const { budget, expenses, folders } = await dataStore.getBudgetOverview(getUserId(req));
+  const dailySpent = expenses
+    .filter((e) => e.period === 'daily')
+    .reduce((sum, e) => sum + e.amount, 0);
+  const monthlySpent = expenses
+    .filter((e) => (e.period || 'monthly') === 'monthly')
+    .reduce((sum, e) => sum + e.amount, 0);
   const totalSpent = expenses.reduce((sum, e) => sum + e.amount, 0);
-  res.json({ budget, expenses, totalSpent });
+  res.json({ budget, expenses, folders, dailySpent, monthlySpent, totalSpent });
 });
 
 apiRouter.patch('/phase2/budget', async (req: Request, res: Response) => {
-  const monthlyLimit = Number(req.body?.monthly_limit);
-  if (!Number.isFinite(monthlyLimit) || monthlyLimit <= 0) {
-    res.status(400).json({ error: 'Valid positive monthly_limit is required' });
+  const schema = z.object({
+    monthly_limit: z.number().positive().optional(),
+    daily_limit: z.number().positive().optional(),
+  });
+  const parsed = schema.safeParse(req.body ?? {});
+  if (!parsed.success || (!parsed.data.monthly_limit && !parsed.data.daily_limit)) {
+    res.status(400).json({ error: 'Valid monthly_limit or daily_limit is required' });
     return;
   }
-  const budget = await dataStore.updateBudgetLimit(getUserId(req), monthlyLimit);
+  const budget = await dataStore.updateBudgetLimit(getUserId(req), parsed.data);
   res.json({ budget });
 });
 
@@ -1089,6 +1099,9 @@ apiRouter.post('/phase2/budget/expense', async (req: Request, res: Response) => 
     title: z.string().min(1),
     amount: z.number().positive(),
     category: z.string().min(1),
+    period: z.enum(['daily', 'monthly']).optional(),
+    folder_id: z.string().nullable().optional(),
+    folder_name: z.string().nullable().optional(),
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) {
@@ -1101,6 +1114,51 @@ apiRouter.post('/phase2/budget/expense', async (req: Request, res: Response) => 
 
 apiRouter.delete('/phase2/budget/expense/:id', async (req: Request, res: Response) => {
   const ok = await dataStore.deleteExpense(getUserId(req), String(req.params.id));
+  res.json({ ok });
+});
+
+apiRouter.post('/phase2/budget/folders', async (req: Request, res: Response) => {
+  const schema = z.object({
+    name: z.string().min(1),
+    period: z.enum(['daily', 'monthly', 'all']).optional(),
+    tone: z.string().optional(),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.flatten() });
+    return;
+  }
+  const folder = await dataStore.createBudgetFolder(getUserId(req), parsed.data);
+  res.status(201).json({ folder });
+});
+
+apiRouter.patch('/phase2/budget/folders/:id', async (req: Request, res: Response) => {
+  const schema = z.object({
+    name: z.string().min(1).optional(),
+    period: z.enum(['daily', 'monthly', 'all']).optional(),
+    tone: z.string().optional(),
+    reminder_label: z.string().nullable().optional(),
+    reminder_id: z.string().nullable().optional(),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.flatten() });
+    return;
+  }
+  const folder = await dataStore.updateBudgetFolder(
+    getUserId(req),
+    String(req.params.id),
+    parsed.data
+  );
+  if (!folder) {
+    res.status(404).json({ error: 'Budget folder not found' });
+    return;
+  }
+  res.json({ folder });
+});
+
+apiRouter.delete('/phase2/budget/folders/:id', async (req: Request, res: Response) => {
+  const ok = await dataStore.deleteBudgetFolder(getUserId(req), String(req.params.id));
   res.json({ ok });
 });
 

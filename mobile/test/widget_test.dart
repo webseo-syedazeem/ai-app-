@@ -256,16 +256,28 @@ void main() {
     await tester.tap(find.text('Back to goals'));
     await tester.pumpAndSettle();
 
-    // Budgeting -> Monthly budget sheet & template action
+    // Budgeting -> Monthly budget sheet & template action, Daily tab, and Total & Folders
     await tester.pumpWidget(
       AiDailyHelperApp(appState: state, initialRoute: AppRoute.budgeting),
     );
     await tester.pumpAndSettle();
-    await tester.drag(find.byType(SingleChildScrollView), const Offset(0, -220));
+    await tester.ensureVisible(find.text('Use last month’s template'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Use last month’s template'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Bills'), findsOneWidget);
+    expect(find.textContaining('Bills'), findsAtLeastNWidgets(1));
+
+    // Switch to Daily tab
+    await tester.tap(find.text('Daily'));
+    await tester.pumpAndSettle();
+    expect(find.text('TODAY’S DAILY SPENDING'), findsOneWidget);
+
+    // Switch to Total & Folders tab
+    await tester.tap(find.text('Total & Folders'));
+    await tester.pumpAndSettle();
+    expect(find.text('TOTAL CALCULATION'), findsOneWidget);
+    expect(find.text('= Combined Total'), findsOneWidget);
+    expect(find.text('Daily Essentials'), findsOneWidget);
 
     // Settings -> Log out -> confirmation modal -> Welcome screen
     await state.signInExisting();

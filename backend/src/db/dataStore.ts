@@ -7,6 +7,7 @@ import { getMongoDb } from './mongoClient.js';
 import type {
   AffirmationItem,
   BrainDumpDraft,
+  BudgetFolder,
   BudgetInfo,
   ChatMessage,
   EmailReportPrefs,
@@ -37,6 +38,7 @@ interface LocalSnapshot {
   usage_logs: UsageLog[];
   budgets: BudgetInfo[];
   expenses: ExpenseItem[];
+  budget_folders?: BudgetFolder[];
   email_report_preferences: Record<string, EmailReportPrefs>;
 }
 
@@ -431,6 +433,7 @@ function createInitialSnapshot(): LocalSnapshot {
         month_key: mk,
         currency: 'Rs.',
         monthly_limit: 45000,
+        daily_limit: 2000,
         created_at: now,
       },
     ],
@@ -442,6 +445,7 @@ function createInitialSnapshot(): LocalSnapshot {
         category: 'Groceries',
         title: 'Weekly groceries',
         amount: 8500,
+        period: 'monthly',
         spent_at: now,
       },
       {
@@ -451,6 +455,7 @@ function createInitialSnapshot(): LocalSnapshot {
         category: 'Bills',
         title: 'Electricity & internet',
         amount: 6250,
+        period: 'monthly',
         spent_at: now,
       },
       {
@@ -458,9 +463,32 @@ function createInitialSnapshot(): LocalSnapshot {
         user_id: uid,
         budget_id: budgetId,
         category: 'Personal',
-        title: 'Coffee & dining',
-        amount: 3500,
+        title: 'Coffee & lunch today',
+        amount: 750,
+        period: 'daily',
         spent_at: now,
+      },
+    ],
+    budget_folders: [
+      {
+        id: crypto.randomUUID(),
+        user_id: uid,
+        name: 'Daily Essentials',
+        period: 'daily',
+        tone: 'emerald',
+        reminder_label: null,
+        reminder_id: null,
+        created_at: now,
+      },
+      {
+        id: crypto.randomUUID(),
+        user_id: uid,
+        name: 'Monthly House Bills',
+        period: 'monthly',
+        tone: 'amber',
+        reminder_label: null,
+        reminder_id: null,
+        created_at: now,
       },
     ],
     email_report_preferences: {
@@ -516,6 +544,9 @@ class LocalStore {
     this.snapshot.messages = this.snapshot.messages.filter((m) => m.user_id !== userId);
     this.snapshot.brain_dump_drafts = this.snapshot.brain_dump_drafts.filter((d) => d.user_id !== userId);
     this.snapshot.expenses = this.snapshot.expenses.filter((e) => e.user_id !== userId);
+    this.snapshot.budget_folders = (this.snapshot.budget_folders ?? []).filter(
+      (f) => f.user_id !== userId
+    );
     this.persist();
   }
 }
@@ -1401,7 +1432,9 @@ export class DataStore {
   }
 
   // ---------------- PHASE 2: BUDGETING & EMAIL REPORTS ----------------
-  async getBudgetOverview(userId: string): Promise<{ budget: BudgetInfo; expenses: ExpenseItem[] }> {
+  async getBudgetOverview(
+    userId: string
+  ): Promise<{ budget: BudgetInfo; expenses: ExpenseItem[]; folders: BudgetFolder[] }> {
     const mk = monthKey();
     const db = await getMongoDb();
     if (db) {
@@ -1411,6 +1444,9 @@ export class DataStore {
       let budget: BudgetInfo;
       if (existingBudget) {
         budget = stripMongoId<BudgetInfo>(existingBudget);
+        if (typeof budget.daily_limit !== 'number') {
+          budget = { ...budget, daily_limit: 2000 };
+        }
       } else {
         budget = {
           id: crypto.randomUUID(),
@@ -1418,16 +1454,20 @@ export class DataStore {
           month_key: mk,
           currency: 'Rs.',
           monthly_limit: 45000,
+          daily_limit: 2000,
           created_at: nowIso(),
         };
         await db.collection<BudgetInfo>('budgets').insertOne({ ...budget });
       }
-      const expenses = await db
-        .collection<ExpenseItem>('expenses')
-        .find({ user_id: userId })
-        .sort({ spent_at: -1 })
-        .toArray();
-      return { budget, expenses: expenses.map((e) => stripMongoId<ExpenseItem>(e)) };
+      const [expenses, folders] = await Promise.all([
+        db.collection<ExpenseItem>('expenses').find({ user_id: userId }).sort({ spent_at: -1 }).toArray(),
+        db.collection<BudgetFolder>('budget_folders').find({ user_id: userId }).sort({ created_at: -1 }).toArray(),
+      ]);
+      return {
+        budget,
+        expenses: expenses.map((e) => stripMongoId<ExpenseItem>(e)),
+        folders: folders.map((f) => stripMongoId<BudgetFolder>(f)),
+      };
     }
 
     const snap = this.local.read();
@@ -1439,18 +1479,27 @@ export class DataStore {
         month_key: mk,
         currency: 'Rs.',
         monthly_limit: 45000,
+        daily_limit: 2000,
         created_at: nowIso(),
       };
       snap.budgets.push(budget);
       this.local.save();
     }
     const expenses = snap.expenses.filter((e) => e.user_id === userId);
-    return { budget, expenses };
+    const folders = (snap.budget_folders ?? []).filter((f) => f.user_id === userId);
+    return { budget, expenses, folders };
   }
 
   async addExpense(
     userId: string,
-    input: { title: string; amount: number; category: string }
+    input: {
+      title: string;
+      amount: number;
+      category: string;
+      period?: 'daily' | 'monthly';
+      folder_id?: string | null;
+      folder_name?: string | null;
+    }
   ): Promise<ExpenseItem> {
     const { budget } = await this.getBudgetOverview(userId);
     const row: ExpenseItem = {
@@ -1460,6 +1509,9 @@ export class DataStore {
       category: input.category || 'Personal',
       title: input.title,
       amount: input.amount,
+      period: input.period || 'monthly',
+      folder_id: input.folder_id ?? null,
+      folder_name: input.folder_name ?? null,
       spent_at: nowIso(),
     };
     const db = await getMongoDb();
@@ -1472,22 +1524,108 @@ export class DataStore {
     return row;
   }
 
-  async updateBudgetLimit(userId: string, monthlyLimit: number): Promise<BudgetInfo> {
+  async updateBudgetLimit(
+    userId: string,
+    patch: number | { monthly_limit?: number; daily_limit?: number }
+  ): Promise<BudgetInfo> {
     const { budget } = await this.getBudgetOverview(userId);
-    const clamped = Math.max(1000, Math.min(10000000, Math.round(monthlyLimit)));
+    const updates: Partial<BudgetInfo> = {};
+    if (typeof patch === 'number') {
+      updates.monthly_limit = Math.max(1000, Math.min(10000000, Math.round(patch)));
+    } else {
+      if (typeof patch.monthly_limit === 'number' && Number.isFinite(patch.monthly_limit)) {
+        updates.monthly_limit = Math.max(1000, Math.min(10000000, Math.round(patch.monthly_limit)));
+      }
+      if (typeof patch.daily_limit === 'number' && Number.isFinite(patch.daily_limit)) {
+        updates.daily_limit = Math.max(100, Math.min(1000000, Math.round(patch.daily_limit)));
+      }
+    }
     const db = await getMongoDb();
     if (db) {
       const res = await db.collection<BudgetInfo>('budgets').findOneAndUpdate(
         { id: budget.id, user_id: userId },
-        { $set: { monthly_limit: clamped } },
+        { $set: updates },
         { returnDocument: 'after' }
       );
-      return res ? stripMongoId(res) : { ...budget, monthly_limit: clamped };
+      return res ? stripMongoId(res) : { ...budget, ...updates };
     }
     const target = this.local.read().budgets.find((b) => b.id === budget.id);
-    if (target) target.monthly_limit = clamped;
+    if (target) Object.assign(target, updates);
     this.local.save();
-    return { ...budget, monthly_limit: clamped };
+    return { ...budget, ...updates };
+  }
+
+  async createBudgetFolder(
+    userId: string,
+    input: { name: string; period?: 'daily' | 'monthly' | 'all'; tone?: string }
+  ): Promise<BudgetFolder> {
+    const folder: BudgetFolder = {
+      id: crypto.randomUUID(),
+      user_id: userId,
+      name: input.name.trim(),
+      period: input.period || 'all',
+      tone: input.tone || 'indigo',
+      reminder_label: null,
+      reminder_id: null,
+      created_at: nowIso(),
+    };
+    const db = await getMongoDb();
+    if (db) {
+      await db.collection<BudgetFolder>('budget_folders').insertOne({ ...folder });
+      return folder;
+    }
+    const snap = this.local.read();
+    snap.budget_folders ??= [];
+    snap.budget_folders.unshift(folder);
+    this.local.save();
+    return folder;
+  }
+
+  async updateBudgetFolder(
+    userId: string,
+    folderId: string,
+    patch: Partial<Pick<BudgetFolder, 'name' | 'period' | 'tone' | 'reminder_label' | 'reminder_id'>>
+  ): Promise<BudgetFolder | null> {
+    const db = await getMongoDb();
+    if (db) {
+      const res = await db.collection<BudgetFolder>('budget_folders').findOneAndUpdate(
+        { id: folderId, user_id: userId },
+        { $set: patch },
+        { returnDocument: 'after' }
+      );
+      return res ? stripMongoId(res) : null;
+    }
+    const snap = this.local.read();
+    const target = (snap.budget_folders ?? []).find((f) => f.id === folderId && f.user_id === userId);
+    if (!target) return null;
+    Object.assign(target, patch);
+    this.local.save();
+    return target;
+  }
+
+  async deleteBudgetFolder(userId: string, folderId: string): Promise<boolean> {
+    const db = await getMongoDb();
+    if (db) {
+      const res = await db
+        .collection<BudgetFolder>('budget_folders')
+        .deleteOne({ id: folderId, user_id: userId });
+      await db
+        .collection<ExpenseItem>('expenses')
+        .updateMany({ user_id: userId, folder_id: folderId }, { $set: { folder_id: null, folder_name: null } });
+      return res.deletedCount > 0;
+    }
+    const snap = this.local.read();
+    const before = (snap.budget_folders ?? []).length;
+    snap.budget_folders = (snap.budget_folders ?? []).filter(
+      (f) => !(f.id === folderId && f.user_id === userId)
+    );
+    snap.expenses = snap.expenses.map((e) =>
+      e.user_id === userId && e.folder_id === folderId
+        ? { ...e, folder_id: null, folder_name: null }
+        : e
+    );
+    this.local.save();
+    return snap.budget_folders.length < before;
   }
 
   async deleteExpense(userId: string, expenseId: string): Promise<boolean> {
@@ -1592,6 +1730,7 @@ export class DataStore {
         db.collection('conversation_messages').deleteMany({ user_id: userId }),
         db.collection('brain_dump_drafts').deleteMany({ user_id: userId }),
         db.collection('expenses').deleteMany({ user_id: userId }),
+        db.collection('budget_folders').deleteMany({ user_id: userId }),
       ]);
       return;
     }

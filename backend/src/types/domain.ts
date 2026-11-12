@@ -165,7 +165,21 @@ export interface ExpenseItem {
   category: string;
   title: string;
   amount: number;
+  period?: 'daily' | 'monthly';
+  folder_id?: string | null;
+  folder_name?: string | null;
   spent_at: string;
+}
+
+export interface BudgetFolder {
+  id: string;
+  user_id: string;
+  name: string;
+  period: 'daily' | 'monthly' | 'all';
+  tone: string;
+  reminder_label?: string | null;
+  reminder_id?: string | null;
+  created_at: string;
 }
 
 export interface BudgetInfo {
@@ -174,6 +188,7 @@ export interface BudgetInfo {
   month_key: string;
   currency: string;
   monthly_limit: number;
+  daily_limit?: number;
   created_at: string;
 }
 

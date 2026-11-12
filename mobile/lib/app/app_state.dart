@@ -41,7 +41,9 @@ class AppState extends ChangeNotifier {
   List<BrainDumpDraftItem> brainDumpDrafts = [];
   String lastBrainDumpTranscript = '';
   int monthlyBudgetLimit = 45000;
+  int dailyBudgetLimit = 2000;
   List<ExpenseModel> expenses = [];
+  List<BudgetFolderModel> budgetFolders = [];
   bool emailReportsEnabled = false;
   bool weeklyEmailSummary = true;
   bool monthlyEmailReview = true;
@@ -70,6 +72,24 @@ class AppState extends ChangeNotifier {
 
   int get totalBudgetSpent =>
       expenses.fold<int>(0, (sum, e) => sum + e.amount);
+
+  List<ExpenseModel> get dailyExpenses =>
+      expenses.where((e) => e.period == 'daily').toList();
+
+  List<ExpenseModel> get monthlyExpenses =>
+      expenses.where((e) => e.period != 'daily').toList();
+
+  int get dailyBudgetSpent =>
+      dailyExpenses.fold<int>(0, (sum, e) => sum + e.amount);
+
+  int get monthlyBudgetSpent =>
+      monthlyExpenses.fold<int>(0, (sum, e) => sum + e.amount);
+
+  List<ExpenseModel> expensesInFolder(String folderId) =>
+      expenses.where((e) => e.folderId == folderId).toList();
+
+  int folderTotal(String folderId) =>
+      expensesInFolder(folderId).fold<int>(0, (sum, e) => sum + e.amount);
 
   Future<void> init({bool checkRemote = true}) async {
     await _localDb.init();
@@ -355,9 +375,14 @@ class AppState extends ChangeNotifier {
     ];
 
     expenses = const [
-      ExpenseModel(id: 'e1', category: 'Groceries', title: 'Weekly groceries', amount: 8500),
-      ExpenseModel(id: 'e2', category: 'Bills', title: 'Electricity & internet', amount: 6250),
-      ExpenseModel(id: 'e3', category: 'Personal', title: 'Coffee & dining', amount: 3500),
+      ExpenseModel(id: 'e1', category: 'Groceries', title: 'Weekly groceries', amount: 8500, period: 'monthly'),
+      ExpenseModel(id: 'e2', category: 'Bills', title: 'Electricity & internet', amount: 6250, period: 'monthly'),
+      ExpenseModel(id: 'e3', category: 'Personal', title: 'Coffee & lunch today', amount: 750, period: 'daily'),
+    ];
+
+    budgetFolders = const [
+      BudgetFolderModel(id: 'bf1', name: 'Daily Essentials', period: 'daily', tone: 'emerald'),
+      BudgetFolderModel(id: 'bf2', name: 'Monthly House Bills', period: 'monthly', tone: 'amber'),
     ];
   }
 
@@ -390,7 +415,11 @@ class AppState extends ChangeNotifier {
     expenses = (snap['expenses'] as List? ?? const [])
         .map((e) => ExpenseModel.fromJson(Map<String, dynamic>.from(e as Map)))
         .toList();
+    budgetFolders = (snap['budget_folders'] as List? ?? const [])
+        .map((e) => BudgetFolderModel.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
     monthlyBudgetLimit = (snap['monthly_budget_limit'] as num?)?.toInt() ?? 45000;
+    dailyBudgetLimit = (snap['daily_budget_limit'] as num?)?.toInt() ?? 2000;
     emailReportsEnabled = snap['email_reports_enabled'] as bool? ?? false;
     weeklyEmailSummary = snap['weekly_email_summary'] as bool? ?? true;
     monthlyEmailReview = snap['monthly_email_review'] as bool? ?? true;
@@ -458,7 +487,9 @@ class AppState extends ChangeNotifier {
       'affirmations': affirmations.map((e) => e.toJson()).toList(),
       'chat_messages': chatMessages.map((e) => e.toJson()).toList(),
       'expenses': expenses.map((e) => e.toJson()).toList(),
+      'budget_folders': budgetFolders.map((e) => e.toJson()).toList(),
       'monthly_budget_limit': monthlyBudgetLimit,
+      'daily_budget_limit': dailyBudgetLimit,
       'email_reports_enabled': emailReportsEnabled,
       'weekly_email_summary': weeklyEmailSummary,
       'monthly_email_review': monthlyEmailReview,
@@ -478,6 +509,7 @@ class AppState extends ChangeNotifier {
     affirmations = [];
     chatMessages = [];
     expenses = [];
+    budgetFolders = [];
     brainDumpDrafts = [];
   }
 
@@ -549,13 +581,24 @@ class AppState extends ChangeNotifier {
     final budgetData = results[8];
     if (budgetData != null) {
       final budgetMap = budgetData['budget'];
-      if (budgetMap is Map && budgetMap['monthly_limit'] is num) {
-        monthlyBudgetLimit = (budgetMap['monthly_limit'] as num).toInt();
+      if (budgetMap is Map) {
+        if (budgetMap['monthly_limit'] is num) {
+          monthlyBudgetLimit = (budgetMap['monthly_limit'] as num).toInt();
+        }
+        if (budgetMap['daily_limit'] is num) {
+          dailyBudgetLimit = (budgetMap['daily_limit'] as num).toInt();
+        }
       }
       final remoteExpenses = budgetData['expenses'];
       if (remoteExpenses is List && (shouldReplace || remoteExpenses.isNotEmpty)) {
         expenses = remoteExpenses
             .map((e) => ExpenseModel.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
+      }
+      final remoteFolders = budgetData['folders'];
+      if (remoteFolders is List && (shouldReplace || remoteFolders.isNotEmpty)) {
+        budgetFolders = remoteFolders
+            .map((e) => BudgetFolderModel.fromJson(Map<String, dynamic>.from(e as Map)))
             .toList();
       }
     }
@@ -1584,6 +1627,13 @@ class AppState extends ChangeNotifier {
     _api.patch('/phase2/budget', {'monthly_limit': monthlyBudgetLimit});
   }
 
+  Future<void> setDailyBudgetLimit(int limit) async {
+    dailyBudgetLimit = limit.clamp(100, 1000000);
+    await _persist();
+    notifyListeners();
+    _api.patch('/phase2/budget', {'daily_limit': dailyBudgetLimit});
+  }
+
   Future<void> deleteExpense(String id) async {
     expenses = expenses.where((e) => e.id != id).toList();
     await _persist();
@@ -1591,7 +1641,14 @@ class AppState extends ChangeNotifier {
     _api.delete('/phase2/budget/expense/$id');
   }
 
-  Future<void> addExpense(String title, int amount, String category) async {
+  Future<void> addExpense(
+    String title,
+    int amount,
+    String category, {
+    String period = 'monthly',
+    String? folderId,
+    String? folderName,
+  }) async {
     final tempId = 'e_${DateTime.now().millisecondsSinceEpoch}';
     expenses = [
       ExpenseModel(
@@ -1599,6 +1656,10 @@ class AppState extends ChangeNotifier {
         category: category,
         title: title,
         amount: amount,
+        period: period,
+        folderId: folderId,
+        folderName: folderName,
+        spentAt: DateTime.now(),
       ),
       ...expenses,
     ];
@@ -1608,6 +1669,9 @@ class AppState extends ChangeNotifier {
       'title': title.trim(),
       'amount': amount,
       'category': category,
+      'period': period,
+      'folder_id': folderId,
+      'folder_name': folderName,
     });
     if (remote != null && remote['expense'] is Map) {
       final serverExp = ExpenseModel.fromJson(Map<String, dynamic>.from(remote['expense'] as Map));
@@ -1615,6 +1679,78 @@ class AppState extends ChangeNotifier {
       await _persist();
       notifyListeners();
     }
+  }
+
+  Future<BudgetFolderModel> createBudgetFolder(
+    String name, {
+    String period = 'all',
+    String tone = 'indigo',
+  }) async {
+    final cleanName = name.trim().isEmpty ? 'Saved folder' : name.trim();
+    final tempId = 'bf_${DateTime.now().millisecondsSinceEpoch}';
+    var created = BudgetFolderModel(
+      id: tempId,
+      name: cleanName,
+      period: period,
+      tone: tone,
+    );
+    budgetFolders = [created, ...budgetFolders];
+    await _persist();
+    notifyListeners();
+    final remote = await _api.post('/phase2/budget/folders', {
+      'name': cleanName,
+      'period': period,
+      'tone': tone,
+    });
+    if (remote != null && remote['folder'] is Map) {
+      created = BudgetFolderModel.fromJson(Map<String, dynamic>.from(remote['folder'] as Map));
+      budgetFolders = budgetFolders.map((f) => f.id == tempId ? created : f).toList();
+      expenses = expenses
+          .map((e) => e.folderId == tempId ? e.copyWith(folderId: created.id) : e)
+          .toList();
+      await _persist();
+      notifyListeners();
+    }
+    return created;
+  }
+
+  Future<void> deleteBudgetFolder(String id) async {
+    budgetFolders = budgetFolders.where((f) => f.id != id).toList();
+    expenses = expenses
+        .map((e) => e.folderId == id ? e.copyWith(clearFolder: true) : e)
+        .toList();
+    await _persist();
+    notifyListeners();
+    _api.delete('/phase2/budget/folders/$id');
+  }
+
+  Future<void> setFolderReminder(
+    String folderId,
+    String reminderLabel,
+    DateTime when,
+  ) async {
+    final idx = budgetFolders.indexWhere((f) => f.id == folderId);
+    if (idx < 0) return;
+    final folder = budgetFolders[idx];
+    final total = folderTotal(folderId);
+    final formattedTotal = total > 0 ? ' (Rs. $total)' : '';
+    await addReminder(
+      'Budget folder: ${folder.name}$formattedTotal',
+      displayTime: reminderLabel,
+      when: when,
+    );
+    final remId = reminders.isNotEmpty ? reminders.first.id : null;
+    budgetFolders = budgetFolders
+        .map((f) => f.id == folderId
+            ? f.copyWith(reminderLabel: reminderLabel, reminderId: remId)
+            : f)
+        .toList();
+    await _persist();
+    notifyListeners();
+    _api.patch('/phase2/budget/folders/$folderId', {
+      'reminder_label': reminderLabel,
+      'reminder_id': remId,
+    });
   }
 
   Future<void> updateEmailReportPrefs({
@@ -1658,6 +1794,7 @@ class AppState extends ChangeNotifier {
     affirmations = [];
     chatMessages = [];
     expenses = [];
+    budgetFolders = [];
     await _localDb.clearAll();
     await _persist();
     notifyListeners();

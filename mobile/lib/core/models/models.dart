@@ -509,19 +509,53 @@ class ExpenseModel {
   final String category;
   final String title;
   final int amount;
+  final String period; // 'daily' | 'monthly'
+  final String? folderId;
+  final String? folderName;
+  final DateTime? spentAt;
 
   const ExpenseModel({
     required this.id,
     required this.category,
     required this.title,
     required this.amount,
+    this.period = 'monthly',
+    this.folderId,
+    this.folderName,
+    this.spentAt,
   });
+
+  ExpenseModel copyWith({
+    String? id,
+    String? category,
+    String? title,
+    int? amount,
+    String? period,
+    String? folderId,
+    String? folderName,
+    bool clearFolder = false,
+  }) {
+    return ExpenseModel(
+      id: id ?? this.id,
+      category: category ?? this.category,
+      title: title ?? this.title,
+      amount: amount ?? this.amount,
+      period: period ?? this.period,
+      folderId: clearFolder ? null : (folderId ?? this.folderId),
+      folderName: clearFolder ? null : (folderName ?? this.folderName),
+      spentAt: spentAt,
+    );
+  }
 
   Map<String, dynamic> toJson() => {
         'id': id,
         'category': category,
         'title': title,
         'amount': amount,
+        'period': period,
+        'folder_id': folderId,
+        'folder_name': folderName,
+        'spent_at': spentAt?.toIso8601String(),
       };
 
   factory ExpenseModel.fromJson(Map<String, dynamic> json) => ExpenseModel(
@@ -529,5 +563,65 @@ class ExpenseModel {
         category: json['category']?.toString() ?? 'Personal',
         title: json['title']?.toString() ?? '',
         amount: (json['amount'] as num?)?.toInt() ?? 0,
+        period: json['period']?.toString() == 'daily' ? 'daily' : 'monthly',
+        folderId: json['folder_id']?.toString(),
+        folderName: json['folder_name']?.toString(),
+        spentAt: json['spent_at'] != null
+            ? DateTime.tryParse(json['spent_at'].toString())
+            : null,
+      );
+}
+
+class BudgetFolderModel {
+  final String id;
+  final String name;
+  final String period; // 'daily' | 'monthly' | 'all'
+  final String tone; // 'emerald' | 'indigo' | 'amber' | 'rose'
+  final String? reminderLabel;
+  final String? reminderId;
+
+  const BudgetFolderModel({
+    required this.id,
+    required this.name,
+    this.period = 'all',
+    this.tone = 'indigo',
+    this.reminderLabel,
+    this.reminderId,
+  });
+
+  BudgetFolderModel copyWith({
+    String? id,
+    String? name,
+    String? period,
+    String? tone,
+    String? reminderLabel,
+    String? reminderId,
+  }) {
+    return BudgetFolderModel(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      period: period ?? this.period,
+      tone: tone ?? this.tone,
+      reminderLabel: reminderLabel ?? this.reminderLabel,
+      reminderId: reminderId ?? this.reminderId,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'period': period,
+        'tone': tone,
+        'reminder_label': reminderLabel,
+        'reminder_id': reminderId,
+      };
+
+  factory BudgetFolderModel.fromJson(Map<String, dynamic> json) => BudgetFolderModel(
+        id: json['id']?.toString() ?? '',
+        name: json['name']?.toString() ?? 'Folder',
+        period: json['period']?.toString() ?? 'all',
+        tone: json['tone']?.toString() ?? 'indigo',
+        reminderLabel: json['reminder_label']?.toString(),
+        reminderId: json['reminder_id']?.toString(),
       );
 }
