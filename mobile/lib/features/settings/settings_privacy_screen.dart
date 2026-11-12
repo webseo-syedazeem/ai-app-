@@ -683,10 +683,12 @@ class SettingsPrivacyScreen extends StatelessWidget {
               title: p.$2,
               subtitle: p.$3,
               color: appState.user.plan == p.$1 ? AppColors.indigo : AppColors.navy,
-              onTap: () {
-                appState.updatePreferences(plan: p.$1);
+              onTap: () async {
                 Navigator.pop(ctx);
-                showAppToast(context, 'Switched to ${p.$1.toUpperCase()} plan');
+                final msg = await appState.selectPlanOrCheckout(p.$1);
+                if (context.mounted) {
+                  showAppToast(context, msg);
+                }
               },
             ),
         ],

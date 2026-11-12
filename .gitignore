@@ -2,6 +2,10 @@
 .env
 .env.*
 !.env.example
+*.jks
+*.keystore
+mobile/android/key.properties
+mobile/android/app/upload-keystore.jks
 
 # Node.js / Backend build & runtime data
 backend/node_modules/

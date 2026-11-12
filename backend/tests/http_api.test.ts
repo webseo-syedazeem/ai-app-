@@ -320,6 +320,29 @@ describe('HTTP REST API', () => {
 
       const cronRes = await fetch(`${base}/api/cron/email-reports`);
       expect([200, 401]).toContain(cronRes.status);
+
+      // Stripe billing checkout & redirect/confirm validation
+      const checkoutRes = await fetch(`${base}/api/billing/checkout`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ plan: 'plus' }),
+      });
+      expect(checkoutRes.status).toBe(200);
+      const checkoutJson = (await checkoutRes.json()) as {
+        configured: boolean;
+        plan: string;
+      };
+      expect(checkoutJson.plan).toBe('plus');
+      expect(typeof checkoutJson.configured).toBe('boolean');
+
+      const redirectRes = await fetch(`${base}/api/billing/redirect?status=cancel&plan=plus`);
+      expect(redirectRes.status).toBe(200);
+      const badConfirm = await fetch(`${base}/api/billing/confirm`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ session_id: 'cs_test_invalid' }),
+      });
+      expect(badConfirm.status).toBe(400);
     } finally {
       if (createdUserId) {
         await dataStore.deleteAllUserData(createdUserId);

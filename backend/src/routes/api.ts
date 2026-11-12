@@ -14,12 +14,22 @@ import {
   verifyPassword,
 } from '../services/authService.js';
 import { checkAndConsumeQuota, PLAN_CONFIG } from '../services/usageService.js';
-import { env, hasEmailConfig, hasGeminiConfig, hasGoogleOAuthConfig } from '../config/env.js';
+import {
+  env,
+  hasEmailConfig,
+  hasGeminiConfig,
+  hasGoogleOAuthConfig,
+  hasStripeConfig,
+} from '../config/env.js';
 import {
   sendDigestReportEmail,
   sendPasswordResetEmail,
   type DigestReportStats,
 } from '../services/emailService.js';
+import {
+  createStripeCheckoutSession,
+  retrieveStripeCheckoutSession,
+} from '../services/stripeService.js';
 
 export const apiRouter = Router();
 
@@ -107,6 +117,7 @@ apiRouter.get('/health', (_req: Request, res: Response) => {
     database: dataStore.isUsingMongo() ? 'mongodb' : 'local-dev-store',
     geminiConfigured: hasGeminiConfig(),
     emailConfigured: hasEmailConfig(),
+    stripeConfigured: hasStripeConfig(),
     timestamp: new Date().toISOString(),
   });
 });
@@ -1348,6 +1359,102 @@ apiRouter.get('/cron/email-reports', async (req: Request, res: Response) => {
     checked: subscribers.length,
     sent: sentCount,
     skipped: skippedCount,
+  });
+});
+
+// ---------------- BILLING / STRIPE CHECKOUT ----------------
+apiRouter.post('/billing/checkout', async (req: Request, res: Response) => {
+  const schema = z.object({
+    plan: z.enum(['plus', 'pro']),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Choose plus or pro plan.' });
+    return;
+  }
+
+  const userId = getUserId(req);
+  const user = await dataStore.ensureUser(userId);
+  const origin = resolvePublicOrigin(req);
+  const successUrl = `${origin}/api/billing/redirect?status=success&plan=${parsed.data.plan}&session_id={CHECKOUT_SESSION_ID}`;
+  const cancelUrl = `${origin}/api/billing/redirect?status=cancel&plan=${parsed.data.plan}`;
+
+  const session = await createStripeCheckoutSession({
+    plan: parsed.data.plan,
+    userId,
+    email: user.email,
+    successUrl,
+    cancelUrl,
+  });
+
+  res.json({
+    ok: Boolean(session.url),
+    configured: session.configured,
+    plan: parsed.data.plan,
+    url: session.url || null,
+    sessionId: session.sessionId || null,
+    reason: session.reason || null,
+  });
+});
+
+apiRouter.get('/billing/redirect', (req: Request, res: Response) => {
+  const status = String(req.query.status || 'cancel');
+  const plan = String(req.query.plan || '');
+  const sessionId = String(req.query.session_id || '');
+  const deepLink = appendRedirectParams('aidailyhelper://billing', {
+    status,
+    ...(plan ? { plan } : {}),
+    ...(sessionId ? { session_id: sessionId } : {}),
+  });
+  const title = status === 'success' ? 'Payment Confirmed' : 'Checkout Cancelled';
+  const message =
+    status === 'success'
+      ? 'Returning you to AI Daily Helper to activate your upgraded plan...'
+      : 'Returning you to AI Daily Helper...';
+  res.type('html').send(
+    renderOAuthHandoffHtml({
+      title,
+      message,
+      deepLink,
+      autoRedirect: true,
+    })
+  );
+});
+
+apiRouter.post('/billing/confirm', async (req: Request, res: Response) => {
+  const schema = z.object({
+    session_id: z.string().min(5, 'Stripe session ID is required'),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Valid Stripe session_id is required.' });
+    return;
+  }
+
+  const userId = getUserId(req);
+  const verified = await retrieveStripeCheckoutSession(parsed.data.session_id);
+  if (!verified.valid || !verified.paid || !verified.plan) {
+    res.status(400).json({
+      error: verified.reason || 'Payment is not completed yet.',
+    });
+    return;
+  }
+  if (verified.userId && verified.userId !== userId) {
+    res.status(403).json({ error: 'Checkout session belongs to another user.' });
+    return;
+  }
+
+  const limits = PLAN_CONFIG[verified.plan];
+  const updated = await dataStore.updateUser(userId, {
+    plan: verified.plan,
+    ai_credits: limits.monthlyActionsLimit,
+  });
+
+  res.json({
+    ok: true,
+    user: sanitizeUser(updated),
+    planLimits: limits,
+    allPlans: PLAN_CONFIG,
   });
 });
 

@@ -29,6 +29,9 @@ export const env = {
   resendApiKey: cleanEnv(process.env.RESEND_API_KEY),
   emailFrom: cleanEnv(process.env.EMAIL_FROM) || 'AI Daily Helper <onboarding@resend.dev>',
   cronSecret: cleanEnv(process.env.CRON_SECRET),
+  stripeSecretKey: cleanEnv(process.env.STRIPE_SECRET_KEY),
+  stripePricePlus: cleanEnv(process.env.STRIPE_PRICE_PLUS),
+  stripePricePro: cleanEnv(process.env.STRIPE_PRICE_PRO),
 };
 
 export function hasGoogleOAuthConfig(): boolean {
@@ -37,6 +40,10 @@ export function hasGoogleOAuthConfig(): boolean {
 
 export function hasEmailConfig(): boolean {
   return Boolean(env.resendApiKey);
+}
+
+export function hasStripeConfig(): boolean {
+  return Boolean(env.stripeSecretKey);
 }
 
 export function hasMongoConfig(): boolean {

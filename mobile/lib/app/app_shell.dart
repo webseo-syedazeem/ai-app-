@@ -86,7 +86,21 @@ class _AppShellState extends State<AppShell> {
   }
 
   Future<void> _handleIncomingUri(Uri uri) async {
-    if (uri.scheme != 'aidailyhelper' || uri.host != 'auth') return;
+    if (uri.scheme != 'aidailyhelper') return;
+    if (uri.host == 'billing') {
+      final err = await widget.appState.handleBillingDeepLink(uri);
+      if (!mounted) return;
+      if (err != null && err.isNotEmpty) {
+        showAppToast(context, err);
+        return;
+      }
+      showAppToast(
+        context,
+        'Payment confirmed! ${widget.appState.user.plan.toUpperCase()} plan is active.',
+      );
+      return;
+    }
+    if (uri.host != 'auth') return;
     final err = await widget.appState.handleAuthDeepLink(uri);
     if (!mounted) return;
     if (err != null && err.isNotEmpty) {

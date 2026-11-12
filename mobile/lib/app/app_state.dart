@@ -732,6 +732,60 @@ class AppState extends ChangeNotifier {
     });
   }
 
+  /// Launches Stripe Checkout when configured on Vercel, or switches locally in preview mode.
+  Future<String> selectPlanOrCheckout(String targetPlan) async {
+    if (targetPlan == 'free') {
+      await updatePreferences(plan: 'free');
+      return 'Switched to FREE plan';
+    }
+    if (!backendConnected) {
+      backendConnected = await _api.checkHealth();
+    }
+    if (backendConnected) {
+      final res = await _api.postResult('/billing/checkout', {'plan': targetPlan});
+      if (res.ok && res.data != null) {
+        final configured = res.data!['configured'] == true;
+        final checkoutUrl = res.data!['url']?.toString();
+        if (configured && checkoutUrl != null && checkoutUrl.startsWith('http')) {
+          final launched = await launchUrl(
+            Uri.parse(checkoutUrl),
+            mode: LaunchMode.externalApplication,
+          );
+          if (launched) {
+            return 'Opening secure Stripe Checkout...';
+          }
+          return 'Could not open browser for Stripe Checkout.';
+        }
+      }
+    }
+    await updatePreferences(plan: targetPlan);
+    return 'Switched to ${targetPlan.toUpperCase()} preview plan (add STRIPE_SECRET_KEY on Vercel for real billing)';
+  }
+
+  /// Verifies Stripe Checkout deep link return and activates the upgraded plan.
+  Future<String?> handleBillingDeepLink(Uri uri) async {
+    final status = uri.queryParameters['status'];
+    if (status == 'cancel') {
+      return 'Checkout was cancelled.';
+    }
+    final sessionId = uri.queryParameters['session_id'];
+    if (sessionId == null || sessionId.isEmpty) {
+      return 'Missing Stripe checkout session.';
+    }
+    final res = await _api.postResult('/billing/confirm', {'session_id': sessionId});
+    if (!res.ok || res.data == null) {
+      return res.error ?? 'Could not verify Stripe payment.';
+    }
+    if (res.data!['user'] is Map) {
+      user = UserProfileModel.fromJson(
+        Map<String, dynamic>.from(res.data!['user'] as Map),
+      );
+      await _persist();
+      notifyListeners();
+    }
+    return null;
+  }
+
   Future<String?> signInExisting({String? email, String? password}) async {
     final cleanEmail = email?.trim().toLowerCase();
     if (cleanEmail != null &&
