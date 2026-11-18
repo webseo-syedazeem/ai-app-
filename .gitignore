@@ -4,6 +4,7 @@
 !.env.example
 *.jks
 *.keystore
+*.zip
 mobile/android/key.properties
 mobile/android/app/upload-keystore.jks
 
