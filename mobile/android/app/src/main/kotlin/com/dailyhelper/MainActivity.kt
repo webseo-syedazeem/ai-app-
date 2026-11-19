@@ -1,4 +1,4 @@
-package com.aidailyhelper.ai_daily_helper
+﻿package com.dailyhelper
 
 import io.flutter.embedding.android.FlutterActivity
 
